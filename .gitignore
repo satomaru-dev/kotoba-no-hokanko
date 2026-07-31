@@ -8,3 +8,4 @@ coverage/
 .pnpm-store/
 .tools/
 web/.env.local
+supabase/.temp/

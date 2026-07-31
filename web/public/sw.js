@@ -1,4 +1,4 @@
-const CACHE = "kotoba-shell-v1";
+const CACHE = "kotoba-shell-v2";
 const SHELL = ["./", "./manifest.webmanifest", "./icon.svg"];
 
 self.addEventListener("install", (event) => {
@@ -25,5 +25,47 @@ self.addEventListener("fetch", (event) => {
         return response;
       })
       .catch(() => caches.match(event.request).then((cached) => cached || caches.match("./")))
+  );
+});
+
+self.addEventListener("push", (event) => {
+  let payload = {};
+  try {
+    payload = event.data?.json() ?? {};
+  } catch {
+    payload = { body: "もう一度考えたかった言葉があります" };
+  }
+  event.waitUntil(
+    self.registration.showNotification(
+      payload.title || "もう一度考えたかった言葉があります",
+      {
+        body: payload.body || "",
+        icon: "./icon.svg",
+        badge: "./icon.svg",
+        tag: payload.reminder_id || "kotoba-reminder",
+        renotify: true,
+        data: {
+          url: payload.url || "./",
+          memo_id: payload.memo_id,
+          reminder_id: payload.reminder_id
+        }
+      }
+    )
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = event.notification.data?.url || "./";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if ("navigate" in client) {
+          client.navigate(target);
+          return client.focus();
+        }
+      }
+      return self.clients.openWindow(target);
+    })
   );
 });

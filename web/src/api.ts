@@ -1,5 +1,14 @@
 import { createClient, type Session } from "@supabase/supabase-js";
-import type { CaptureInput, CaptureResponse, Memo, RelatedMemory } from "./types";
+import type {
+  CaptureInput,
+  CaptureResponse,
+  FeedbackVerdict,
+  IdeaThread,
+  Memo,
+  RelatedMemory,
+  Reminder,
+  ReminderInput
+} from "./types";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -65,3 +74,77 @@ export const restoreMemo = async (id: string): Promise<Memo> => {
   const result = await request<{ memo: Memo }>(`/memos/${id}/restore`, { method: "POST" });
   return result.memo;
 };
+
+export const saveFeedback = (
+  queryMemoId: string,
+  candidateMemoryId: string,
+  verdict: FeedbackVerdict
+): Promise<{ saved: boolean }> =>
+  request("/feedback", {
+    method: "POST",
+    body: JSON.stringify({
+      query_memo_id: queryMemoId,
+      candidate_memory_id: candidateMemoryId,
+      verdict
+    })
+  });
+
+export const createIdeaThread = async (
+  rootMemoryId: string,
+  currentMemoId?: string
+): Promise<IdeaThread> => {
+  const result = await request<{ thread: IdeaThread }>("/idea-threads", {
+    method: "POST",
+    body: JSON.stringify({
+      root_memory_id: rootMemoryId,
+      current_memo_id: currentMemoId
+    })
+  });
+  return result.thread;
+};
+
+export const getIdeaThread = async (id: string): Promise<IdeaThread> => {
+  const result = await request<{ thread: IdeaThread }>(`/idea-threads/${id}`);
+  return result.thread;
+};
+
+export const addIdeaThreadEntry = async (id: string, text: string): Promise<IdeaThread> => {
+  const result = await request<{ thread: IdeaThread }>(`/idea-threads/${id}/entries`, {
+    method: "POST",
+    body: JSON.stringify({ text })
+  });
+  return result.thread;
+};
+
+export const getPushPublicKey = async (): Promise<string> => {
+  const result = await request<{ public_key: string }>("/push/public-key");
+  return result.public_key;
+};
+
+export const savePushSubscription = (subscription: PushSubscriptionJSON) =>
+  request<{ subscribed: boolean }>("/push/subscriptions", {
+    method: "POST",
+    body: JSON.stringify({ subscription })
+  });
+
+export const createReminder = async (input: ReminderInput): Promise<Reminder> => {
+  const result = await request<{ reminder: Reminder }>(`/memos/${input.memo_id}/reminders`, {
+    method: "POST",
+    body: JSON.stringify({
+      client_id: input.client_id,
+      remind_at: input.remind_at
+    })
+  });
+  return result.reminder;
+};
+
+export const listDueReminders = async (): Promise<Reminder[]> => {
+  const result = await request<{ reminders: Reminder[] }>("/reminders");
+  return result.reminders;
+};
+
+export const markReminderOpened = (id: string) =>
+  request<{ opened: boolean }>(`/reminders/${id}/open`, { method: "POST" });
+
+export const cancelReminder = (id: string): Promise<void> =>
+  request(`/reminders/${id}`, { method: "DELETE" });

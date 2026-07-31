@@ -13,6 +13,9 @@ export interface RelatedMemory {
   title: string;
   relation: Relation;
   confidence: number;
+  thread_id: string | null;
+  dialogue_count: number;
+  has_dialogue: boolean;
 }
 
 export interface MemoRevision {
@@ -41,4 +44,44 @@ export interface CaptureInput {
 export interface CaptureResponse {
   memo: Memo;
   related: RelatedMemory[];
+}
+
+export type FeedbackVerdict = "relevant" | "irrelevant";
+
+export interface IdeaThreadEntry {
+  id: string;
+  kind: "memo_link" | "reflection";
+  memo_id: string | null;
+  title: string;
+  text: string;
+  written_at: string;
+}
+
+export interface IdeaThread {
+  id: string;
+  root: {
+    memory_id: string;
+    source_type: string;
+    date: string | null;
+    title: string;
+    text: string;
+    source_uri: string;
+  };
+  entries: IdeaThreadEntry[];
+}
+
+export interface Reminder {
+  id: string;
+  memo_id: string;
+  scheduled_for: string;
+  next_attempt_at: string | null;
+  delivery_count: number;
+  status: "scheduled" | "delivered" | "opened" | "cancelled";
+  memo?: Memo | null;
+}
+
+export interface ReminderInput {
+  client_id: string;
+  memo_id: string;
+  remind_at: string;
 }
