@@ -2,20 +2,49 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { Session } from "@supabase/supabase-js";
 import {
+  addIdeaThreadEntry,
+  cancelReminder,
   captureMemo,
   cloudMode,
+  createIdeaThread,
+  createReminder,
+  getIdeaThread,
+  getPushPublicKey,
+  listDueReminders,
   listMemos,
+  markReminderOpened,
   restoreMemo,
+  saveFeedback,
+  savePushSubscription,
   searchMemories,
   supabase,
   trashMemo,
   updateMemo
 } from "./api";
-import { listQueuedCaptures, queueCapture, queuedCount, removeQueuedCapture } from "./offline";
-import type { CaptureInput, Memo, RelatedMemory } from "./types";
+import {
+  listQueuedCaptures,
+  listQueuedReminders,
+  queueCapture,
+  queueReminder,
+  queuedCount,
+  removeQueuedCapture,
+  removeQueuedReminder
+} from "./offline";
+import type {
+  CaptureInput,
+  FeedbackVerdict,
+  IdeaThread,
+  Memo,
+  RelatedMemory,
+  Reminder,
+  ReminderInput
+} from "./types";
 
 type Tab = "write" | "search" | "recent";
 type InstallPrompt = Event & { prompt: () => Promise<void> };
+
+const DIALOGUE_BETA = import.meta.env.VITE_DIALOGUE_BETA === "true";
+const REMINDER_BETA = import.meta.env.VITE_REMINDER_BETA === "true";
 
 const formatDate = (value: string | null): string => {
   if (!value) return "日付不明";
@@ -26,12 +55,56 @@ const formatDate = (value: string | null): string => {
   }).format(new Date(value));
 };
 
+const formatDateTime = (value: string): string =>
+  new Intl.DateTimeFormat("ja-JP", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(new Date(value));
+
+const base64UrlToBytes = (value: string): Uint8Array => {
+  const padding = "=".repeat((4 - value.length % 4) % 4);
+  const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
+  return Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
+};
+
+const ensurePushSubscription = async (): Promise<boolean> => {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+    return false;
+  }
+  if (Notification.permission === "denied") return false;
+  const permission = Notification.permission === "granted"
+    ? "granted"
+    : await Notification.requestPermission();
+  if (permission !== "granted") return false;
+  const registration = await navigator.serviceWorker.ready;
+  let subscription = await registration.pushManager.getSubscription();
+  if (!subscription) {
+    const publicKey = await getPushPublicKey();
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: base64UrlToBytes(publicKey) as BufferSource
+    });
+  }
+  await savePushSubscription(subscription.toJSON());
+  return true;
+};
+
 const RelatedCards = ({
   memories,
-  onOpen
+  queryMemoId,
+  allowLink,
+  onOpen,
+  onFeedback,
+  onLink
 }: {
   memories: RelatedMemory[];
+  queryMemoId?: string;
+  allowLink?: boolean;
   onOpen: (memory: RelatedMemory) => void;
+  onFeedback: (memory: RelatedMemory, verdict: FeedbackVerdict) => void;
+  onLink: (memory: RelatedMemory) => void;
 }) => {
   if (memories.length === 0) return null;
   return (
@@ -40,15 +113,32 @@ const RelatedCards = ({
       <h2>近くに、こんな記録がありました</h2>
       <div className="related-list">
         {memories.map((memory) => (
-          <button className="memory-card" key={memory.memory_id} onClick={() => onOpen(memory)}>
-            <span className="memory-meta">
-              <time>{formatDate(memory.date)}</time>
-              <span className="relation">{memory.relation}</span>
-            </span>
-            <strong>{memory.title}</strong>
-            <span className="memory-excerpt">{memory.excerpt}</span>
-            <span className="open-label">記録をひらく →</span>
-          </button>
+          <article className="memory-card" key={memory.memory_id}>
+            <button className="memory-card-main" onClick={() => onOpen(memory)}>
+              <span className="memory-meta">
+                <time>{formatDate(memory.date)}</time>
+                <span className="relation">{memory.relation}</span>
+              </span>
+              <strong>{memory.title}</strong>
+              <span className="memory-excerpt">{memory.excerpt}</span>
+              {memory.has_dialogue && (
+                <span className="dialogue-count">過去との対話 {memory.dialogue_count}件</span>
+              )}
+              <span className="open-label">記録をひらく →</span>
+            </button>
+            {queryMemoId && (
+              <div className="memory-feedback">
+                <span>近かった？</span>
+                <button onClick={() => onFeedback(memory, "relevant")}>近い</button>
+                <button onClick={() => onFeedback(memory, "irrelevant")}>違う</button>
+              </div>
+            )}
+            {DIALOGUE_BETA && allowLink && queryMemoId && (
+              <button className="thread-link-button" onClick={() => onLink(memory)}>
+                この言葉を、続きとしてつなぐ <span>β</span>
+              </button>
+            )}
+          </article>
         ))}
       </div>
     </section>
@@ -62,9 +152,12 @@ const AuthScreen = ({ onReady }: { onReady: (session: Session) => void }) => {
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setError("");
+    const redirect = new URL(window.location.href);
+    redirect.hash = "";
+    redirect.search = "";
     const { error: authError } = await supabase!.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: window.location.href.split("#")[0] }
+      options: { emailRedirectTo: redirect.toString() }
     });
     if (authError) setError(authError.message);
     else setSent(true);
@@ -111,6 +204,8 @@ export const App = () => {
   const [saving, setSaving] = useState(false);
   const [saveState, setSaveState] = useState<"idle" | "saved" | "queued">("idle");
   const [related, setRelated] = useState<RelatedMemory[]>([]);
+  const [lastSavedMemo, setLastSavedMemo] = useState<Memo | null>(null);
+  const [showReminder, setShowReminder] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
@@ -119,6 +214,9 @@ export const App = () => {
   const [trash, setTrash] = useState<Memo[]>([]);
   const [showTrash, setShowTrash] = useState(false);
   const [selected, setSelected] = useState<Memo | null>(null);
+  const [selectedMemory, setSelectedMemory] = useState<RelatedMemory | null>(null);
+  const [ideaThread, setIdeaThread] = useState<IdeaThread | null>(null);
+  const [dueReminders, setDueReminders] = useState<Reminder[]>([]);
   const [installPrompt, setInstallPrompt] = useState<InstallPrompt | null>(null);
   const [notice, setNotice] = useState("");
   const textarea = useRef<HTMLTextAreaElement>(null);
@@ -140,6 +238,14 @@ export const App = () => {
       try {
         await captureMemo(item);
         await removeQueuedCapture(item.client_id);
+      } catch {
+        break;
+      }
+    }
+    for (const item of await listQueuedReminders()) {
+      try {
+        await createReminder(item);
+        await removeQueuedReminder(item.client_id);
       } catch {
         break;
       }
@@ -167,20 +273,61 @@ export const App = () => {
       const [active, deleted] = await Promise.all([listMemos(false), listMemos(true)]);
       setMemos(active);
       setTrash(deleted);
+      return [...active, ...deleted];
     } catch {
       setNotice("記録を読み込めませんでした。通信が戻ったら、もう一度開いてください。");
+      return [];
     }
   }, []);
+
+  const refreshDueReminders = useCallback(async () => {
+    if (!REMINDER_BETA || (cloudMode && !session)) return;
+    try {
+      setDueReminders(await listDueReminders());
+    } catch {
+      // Reminders are supplementary. Capture remains available.
+    }
+  }, [session]);
 
   useEffect(() => {
     if (tab === "recent" && (!cloudMode || session)) void refreshMemos();
   }, [tab, session, refreshMemos]);
+
+  useEffect(() => {
+    if (!session && cloudMode) return;
+    void refreshDueReminders();
+  }, [session, refreshDueReminders]);
+
+  useEffect(() => {
+    if (!session || !REMINDER_BETA) return;
+    const parameters = new URLSearchParams(window.location.search);
+    const reminderId = parameters.get("reminder");
+    const memoId = parameters.get("memo");
+    if (!reminderId || !memoId) return;
+    void (async () => {
+      try {
+        await markReminderOpened(reminderId);
+        const all = await refreshMemos();
+        const memo = all.find((item) => item.id === memoId);
+        if (memo) setSelected(memo);
+        parameters.delete("reminder");
+        parameters.delete("memo");
+        const suffix = parameters.toString();
+        history.replaceState(null, "", `${window.location.pathname}${suffix ? `?${suffix}` : ""}`);
+        await refreshDueReminders();
+      } catch {
+        setNotice("通知の記録を開けませんでした。メモは消えていません。");
+      }
+    })();
+  }, [session, refreshDueReminders, refreshMemos]);
 
   const save = async () => {
     const clean = text.trim();
     if (!clean || saving) return;
     setSaving(true);
     setRelated([]);
+    setLastSavedMemo(null);
+    setShowReminder(false);
     setSaveState("idle");
     const input: CaptureInput = {
       client_id: crypto.randomUUID(),
@@ -191,6 +338,8 @@ export const App = () => {
       if (!navigator.onLine) throw new Error("offline");
       const result = await captureMemo(input);
       setRelated(result.related);
+      setLastSavedMemo(result.memo);
+      setShowReminder(REMINDER_BETA);
       setSaveState("saved");
     } catch {
       await queueCapture(input);
@@ -217,27 +366,83 @@ export const App = () => {
   };
 
   const openMemory = async (memory: RelatedMemory) => {
+    if (memory.source_type === "idea_thread" && memory.thread_id) {
+      try {
+        setIdeaThread(await getIdeaThread(memory.thread_id));
+      } catch {
+        setNotice("過去との対話を開けませんでした。");
+      }
+      return;
+    }
     const id = memory.source_uri.startsWith("memory://memo/")
       ? memory.source_uri.slice("memory://memo/".length)
       : memory.memory_id;
     let local = [...memos, ...trash].find((memo) => memo.id === id);
     if (!local && memory.source_type === "mobile_app") {
-      try {
-        const [active, deleted] = await Promise.all([listMemos(false), listMemos(true)]);
-        setMemos(active);
-        setTrash(deleted);
-        local = [...active, ...deleted].find((memo) => memo.id === id);
-      } catch {
-        setNotice("記録を開けませんでした。通信が戻ってから、もう一度試してください。");
-        return;
+      const all = await refreshMemos();
+      local = all.find((memo) => memo.id === id);
+    }
+    if (local) setSelected(local);
+    else setSelectedMemory(memory);
+  };
+
+  const beginThread = async (memoryId: string, currentMemoId?: string) => {
+    try {
+      const thread = await createIdeaThread(memoryId, currentMemoId);
+      setSelected(null);
+      setSelectedMemory(null);
+      setIdeaThread(thread);
+      setNotice(currentMemoId ? "過去の言葉へ、今の言葉をつなぎました。" : "");
+    } catch {
+      setNotice("今は対話を始められません。元の記録は変わっていません。");
+    }
+  };
+
+  const recordFeedback = async (memory: RelatedMemory, verdict: FeedbackVerdict) => {
+    if (!lastSavedMemo) return;
+    try {
+      await saveFeedback(lastSavedMemo.id, memory.memory_id, verdict);
+      if (verdict === "irrelevant") {
+        setRelated((items) => items.filter((item) => item.memory_id !== memory.memory_id));
+      } else {
+        setNotice("「近い」を覚えました。");
       }
+    } catch {
+      setNotice("評価は保存できませんでした。メモには影響ありません。");
     }
-    if (local) {
-      setSelected(local);
-      return;
+  };
+
+  const scheduleReminder = async (remindAt: Date) => {
+    if (!lastSavedMemo) return;
+    const input: ReminderInput = {
+      client_id: crypto.randomUUID(),
+      memo_id: lastSavedMemo.id,
+      remind_at: remindAt.toISOString()
+    };
+    try {
+      const pushReady = await ensurePushSubscription();
+      if (!navigator.onLine) throw new Error("offline");
+      await createReminder(input);
+      setNotice(pushReady
+        ? `${formatDateTime(input.remind_at)}に、もう一度知らせます。`
+        : "通知は許可されていないため、次にアプリを開いた時に表示します。");
+    } catch {
+      await queueReminder(input);
+      setNotice("通信が戻ったら、リマインダーを登録します。");
+    } finally {
+      setShowReminder(false);
     }
-    if (/^https?:/i.test(memory.source_uri)) window.open(memory.source_uri, "_blank", "noopener");
-    else setNotice("元の記録はPC側の保管庫にあります。");
+  };
+
+  const openDueReminder = async (reminder: Reminder) => {
+    if (!reminder.memo) return;
+    try {
+      await markReminderOpened(reminder.id);
+      setSelected(reminder.memo);
+      setDueReminders((items) => items.filter((item) => item.id !== reminder.id));
+    } catch {
+      setNotice("今は開封を記録できません。");
+    }
   };
 
   const navTitle = useMemo(() => {
@@ -264,6 +469,25 @@ export const App = () => {
           </button>
         )}
       </header>
+
+      {REMINDER_BETA && dueReminders[0] && (
+        <div className="due-reminder">
+          <button onClick={() => void openDueReminder(dueReminders[0]!)}>
+            <span>もう一度考えたかった言葉があります</span>
+            <strong>{dueReminders[0].memo?.title}</strong>
+          </button>
+          <button
+            className="dismiss-reminder"
+            aria-label="リマインダーを取り消す"
+            onClick={() => {
+              const reminder = dueReminders[0]!;
+              void cancelReminder(reminder.id).then(() =>
+                setDueReminders((items) => items.slice(1))
+              );
+            }}
+          >×</button>
+        </div>
+      )}
 
       <main className="content">
         {tab === "write" && (
@@ -300,7 +524,20 @@ export const App = () => {
                 </small>
               </div>
             )}
-            <RelatedCards memories={related} onOpen={openMemory} />
+            {REMINDER_BETA && showReminder && lastSavedMemo && (
+              <ReminderChooser
+                onSchedule={(date) => void scheduleReminder(date)}
+                onClose={() => setShowReminder(false)}
+              />
+            )}
+            <RelatedCards
+              memories={related}
+              queryMemoId={lastSavedMemo?.id}
+              allowLink
+              onOpen={(memory) => void openMemory(memory)}
+              onFeedback={(memory, verdict) => void recordFeedback(memory, verdict)}
+              onLink={(memory) => void beginThread(memory.memory_id, lastSavedMemo?.id)}
+            />
           </>
         )}
 
@@ -323,7 +560,12 @@ export const App = () => {
             {searchResults.length === 0 && query && !searching && (
               <p className="empty-message">強くつながる記録は、まだ見つかっていません。</p>
             )}
-            <RelatedCards memories={searchResults} onOpen={openMemory} />
+            <RelatedCards
+              memories={searchResults}
+              onOpen={(memory) => void openMemory(memory)}
+              onFeedback={() => undefined}
+              onLink={(memory) => void beginThread(memory.memory_id)}
+            />
           </section>
         )}
 
@@ -371,9 +613,29 @@ export const App = () => {
         <MemoDialog
           memo={selected}
           onClose={() => setSelected(null)}
+          onDialogue={DIALOGUE_BETA ? () => void beginThread(selected.id) : undefined}
           onChanged={async () => {
             setSelected(null);
             await refreshMemos();
+          }}
+        />
+      )}
+      {selectedMemory && (
+        <MemoryPreviewDialog
+          memory={selectedMemory}
+          onClose={() => setSelectedMemory(null)}
+          onDialogue={DIALOGUE_BETA
+            ? () => void beginThread(selectedMemory.memory_id)
+            : undefined}
+        />
+      )}
+      {ideaThread && (
+        <IdeaThreadDialog
+          thread={ideaThread}
+          onClose={() => setIdeaThread(null)}
+          onAdd={async (value) => {
+            const updated = await addIdeaThreadEntry(ideaThread.id, value);
+            setIdeaThread(updated);
           }}
         />
       )}
@@ -384,21 +646,143 @@ export const App = () => {
   );
 };
 
+const ReminderChooser = ({
+  onSchedule,
+  onClose
+}: {
+  onSchedule: (date: Date) => void;
+  onClose: () => void;
+}) => {
+  const [custom, setCustom] = useState("");
+  const now = new Date();
+  const tonight = new Date(now);
+  tonight.setHours(21, 0, 0, 0);
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setHours(8, 0, 0, 0);
+  const showTonight = now.getHours() < 20 || (now.getHours() === 20 && now.getMinutes() < 30);
+  return (
+    <section className="reminder-chooser">
+      <div>
+        <strong>あとで、もう一度考える？</strong>
+        <button aria-label="閉じる" onClick={onClose}>×</button>
+      </div>
+      <p>通知には、この言葉の冒頭が表示されます。</p>
+      <div className="reminder-presets">
+        <button onClick={() => onSchedule(new Date(Date.now() + 60 * 60 * 1000))}>1時間後</button>
+        {showTonight && <button onClick={() => onSchedule(tonight)}>今夜21時</button>}
+        <button onClick={() => onSchedule(tomorrow)}>明日の朝8時</button>
+      </div>
+      <div className="custom-reminder">
+        <input
+          type="datetime-local"
+          value={custom}
+          onChange={(event) => setCustom(event.target.value)}
+          aria-label="日時を指定"
+        />
+        <button disabled={!custom} onClick={() => onSchedule(new Date(custom))}>この日時</button>
+      </div>
+    </section>
+  );
+};
+
+const MemoryPreviewDialog = ({
+  memory,
+  onClose,
+  onDialogue
+}: {
+  memory: RelatedMemory;
+  onClose: () => void;
+  onDialogue?: () => void;
+}) => (
+  <div className="dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <article className="memo-dialog" role="dialog" aria-modal="true">
+      <button className="close-button" onClick={onClose} aria-label="閉じる">×</button>
+      <time>{formatDate(memory.date)}</time>
+      <h2>{memory.title}</h2>
+      <p className="full-text">{memory.excerpt}</p>
+      {onDialogue && (
+        <button className="dialogue-button" onClick={onDialogue}>
+          今の自分から返す <span>β</span>
+        </button>
+      )}
+      <small className="source-note">元の記録：{memory.source_type}</small>
+    </article>
+  </div>
+);
+
+const IdeaThreadDialog = ({
+  thread,
+  onClose,
+  onAdd
+}: {
+  thread: IdeaThread;
+  onClose: () => void;
+  onAdd: (text: string) => Promise<void>;
+}) => {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    if (!text.trim() || busy) return;
+    setBusy(true);
+    try {
+      await onAdd(text.trim());
+      setText("");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <article className="memo-dialog thread-dialog" role="dialog" aria-modal="true">
+        <button className="close-button" onClick={onClose} aria-label="閉じる">×</button>
+        <p className="eyebrow">過去の自分との対話 β</p>
+        <div className="thread-timeline">
+          <section className="thread-entry root">
+            <time>{formatDate(thread.root.date)}</time>
+            <strong>{thread.root.title}</strong>
+            <p>{thread.root.text}</p>
+          </section>
+          {thread.entries.map((entry) => (
+            <section className="thread-entry" key={entry.id}>
+              <time>{formatDate(entry.written_at)}</time>
+              <strong>{entry.title}</strong>
+              <p>{entry.text}</p>
+            </section>
+          ))}
+        </div>
+        <label className="reflection-box">
+          <span>今の自分から返す</span>
+          <textarea
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            placeholder="今読むと、同じところ／変わったところは？"
+          />
+        </label>
+        <button className="primary-button" disabled={!text.trim() || busy} onClick={() => void submit()}>
+          {busy ? "残しています…" : "この時点の言葉を残す"}
+        </button>
+      </article>
+    </div>
+  );
+};
+
 const MemoDialog = ({
   memo,
   onClose,
-  onChanged
+  onChanged,
+  onDialogue
 }: {
   memo: Memo;
   onClose: () => void;
   onChanged: () => Promise<void>;
+  onDialogue?: () => void;
 }) => {
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(memo.title);
   const [text, setText] = useState(memo.current_text);
-  const [history, setHistory] = useState(false);
+  const [historyVisible, setHistoryVisible] = useState(false);
   const [busy, setBusy] = useState(false);
-
   const save = async () => {
     setBusy(true);
     await updateMemo(memo.id, text, title);
@@ -415,7 +799,6 @@ const MemoDialog = ({
     await restoreMemo(memo.id);
     await onChanged();
   };
-
   return (
     <div className="dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <article className="memo-dialog" role="dialog" aria-modal="true">
@@ -438,7 +821,7 @@ const MemoDialog = ({
             <p>{memo.original_text}</p>
           </div>
         )}
-        {history && memo.revisions.length > 0 && (
+        {historyVisible && memo.revisions.length > 0 && (
           <div className="revision-list">
             {memo.revisions.map((revision) => (
               <div key={revision.revised_at}>
@@ -448,21 +831,34 @@ const MemoDialog = ({
             ))}
           </div>
         )}
+        {onDialogue && !memo.deleted_at && !editing && (
+          <button className="dialogue-button" onClick={onDialogue}>
+            今の自分から返す <span>β</span>
+          </button>
+        )}
         <div className="dialog-actions">
           {memo.deleted_at ? (
-            <button className="primary-button" disabled={busy} onClick={restore}>元に戻す</button>
+            <button className="primary-button" disabled={busy} onClick={() => void restore()}>
+              元に戻す
+            </button>
           ) : editing ? (
             <>
               <button className="text-button" onClick={() => setEditing(false)}>やめる</button>
-              <button className="primary-button" disabled={busy || !text.trim()} onClick={save}>変更を残す</button>
+              <button className="primary-button" disabled={busy || !text.trim()} onClick={() => void save()}>
+                変更を残す
+              </button>
             </>
           ) : (
             <>
-              <button className="text-button danger" disabled={busy} onClick={remove}>ゴミ箱へ</button>
               {memo.revisions.length > 0 && (
-                <button className="text-button" onClick={() => setHistory(!history)}>履歴</button>
+                <button className="text-button" onClick={() => setHistoryVisible((value) => !value)}>
+                  {historyVisible ? "履歴を閉じる" : "編集履歴"}
+                </button>
               )}
-              <button className="primary-button" onClick={() => setEditing(true)}>手直しする</button>
+              <button className="text-button" onClick={() => setEditing(true)}>手直し</button>
+              <button className="danger-button" disabled={busy} onClick={() => void remove()}>
+                ゴミ箱へ
+              </button>
             </>
           )}
         </div>

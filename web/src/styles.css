@@ -43,13 +43,33 @@ button { color: inherit; }
 .related-section { margin-top: 34px; }
 .related-section h2 { margin: 0 0 15px; font-family: "Yu Mincho", serif; font-size: 20px; font-weight: 600; }
 .related-list { display: grid; gap: 10px; }
-.memory-card { width: 100%; padding: 17px 18px; border: 1px solid var(--line); border-radius: 3px 14px 3px 3px; background: rgba(255, 253, 248, .66); text-align: left; }
+.memory-card { width: 100%; overflow: hidden; border: 1px solid var(--line); border-radius: 3px 14px 3px 3px; background: rgba(255, 253, 248, .66); text-align: left; }
 .memory-card:active { background: white; }
+.memory-card-main { display: block; width: 100%; padding: 17px 18px 12px; border: 0; background: transparent; text-align: left; }
 .memory-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; color: var(--muted); font-size: 11px; }
 .relation { padding: 3px 7px; border: 1px solid #d6b4a9; border-radius: 999px; color: var(--accent); }
 .memory-card strong { display: block; margin-bottom: 7px; font-size: 15px; }
 .memory-excerpt { display: -webkit-box; overflow: hidden; color: #514c44; font-family: "Yu Mincho", serif; font-size: 14px; line-height: 1.75; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .open-label { display: block; margin-top: 11px; color: var(--accent); font-size: 11px; font-weight: 700; }
+.dialogue-count { display: inline-block; margin-top: 10px; padding: 3px 7px; border-radius: 999px; background: #eee5d7; color: var(--muted); font-size: 10px; }
+.memory-feedback { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding: 8px 14px; border-top: 1px solid #e8e0d4; color: var(--muted); font-size: 10px; }
+.memory-feedback button { padding: 5px 9px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); font-size: 10px; }
+.thread-link-button { width: 100%; padding: 10px 14px; border: 0; border-top: 1px solid #e8e0d4; background: #f3eadf; color: var(--accent-dark); font-size: 11px; font-weight: 700; }
+.thread-link-button span, .dialogue-button span { margin-left: 4px; padding: 2px 5px; border-radius: 999px; background: var(--accent); color: white; font-size: 9px; }
+
+.reminder-chooser { margin-top: 14px; padding: 15px; border: 1px solid #d5c6b2; border-radius: 3px 14px 3px 3px; background: #fffaf1; }
+.reminder-chooser > div:first-child { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.reminder-chooser > div:first-child button { border: 0; background: none; font-size: 20px; }
+.reminder-chooser p { margin: 6px 0 12px; color: var(--muted); font-size: 11px; }
+.reminder-presets { display: flex; flex-wrap: wrap; gap: 7px; }
+.reminder-presets button, .custom-reminder button { padding: 8px 10px; border: 1px solid var(--line); border-radius: 999px; background: white; font-size: 12px; }
+.custom-reminder { display: flex; gap: 7px; margin-top: 9px; }
+.custom-reminder input { min-width: 0; flex: 1; padding: 7px; border: 1px solid var(--line); background: white; font-size: 12px; }
+.due-reminder { position: relative; margin: 0 18px 14px; padding: 13px 42px 13px 14px; border-left: 3px solid var(--accent); background: #fff9ef; box-shadow: 0 6px 18px rgba(59,45,29,.06); }
+.due-reminder > button:first-child { display: block; width: 100%; border: 0; background: none; text-align: left; }
+.due-reminder span { display: block; margin-bottom: 5px; color: var(--accent); font-size: 11px; font-weight: 700; }
+.due-reminder strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dismiss-reminder { position: absolute; top: 10px; right: 9px; border: 0; background: none; font-size: 20px; }
 
 .search-panel form { margin-top: 10px; }
 .search-panel label { display: block; margin-bottom: 11px; color: var(--muted); font-size: 13px; }
@@ -92,6 +112,22 @@ button { color: inherit; }
 .primary-button { padding: 12px 18px; border: 0; border-radius: 2px 11px 2px 2px; background: var(--ink); color: white; font-weight: 700; }
 .text-button { padding: 10px; border: 0; background: none; color: var(--muted); }
 .text-button.danger { color: var(--accent); margin-right: auto; }
+.danger-button { margin-right: auto; padding: 10px; border: 0; background: none; color: var(--accent); }
+.dialogue-button { display: block; width: 100%; margin-top: 24px; padding: 12px; border: 1px solid #d5b7aa; border-radius: 2px 10px 2px 2px; background: #fff7f2; color: var(--accent-dark); font-weight: 700; }
+.source-note { display: block; margin-top: 18px; color: var(--muted); }
+.thread-dialog { max-height: 94vh; }
+.thread-timeline { position: relative; display: grid; gap: 15px; margin-top: 18px; padding-left: 20px; }
+.thread-timeline::before { position: absolute; top: 8px; bottom: 8px; left: 6px; width: 1px; background: var(--line); content: ""; }
+.thread-entry { position: relative; padding: 14px; border: 1px solid var(--line); background: white; }
+.thread-entry::before { position: absolute; top: 20px; left: -20px; width: 9px; height: 9px; border: 2px solid var(--card); border-radius: 50%; background: var(--accent); content: ""; }
+.thread-entry.root { background: var(--paper); }
+.thread-entry time { display: block; margin-bottom: 5px; color: var(--muted); font-size: 10px; }
+.thread-entry strong { display: block; margin-bottom: 7px; }
+.thread-entry p { margin: 0; white-space: pre-wrap; font-family: "Yu Mincho", serif; font-size: 14px; line-height: 1.75; }
+.reflection-box { display: block; margin-top: 22px; }
+.reflection-box span { display: block; margin-bottom: 8px; font-weight: 700; }
+.reflection-box textarea { width: 100%; min-height: 130px; padding: 13px; border: 1px solid var(--line); outline-color: var(--accent); background: white; font-family: "Yu Mincho", serif; line-height: 1.75; resize: vertical; }
+.thread-dialog > .primary-button { width: 100%; margin-top: 9px; }
 .notice { position: fixed; z-index: 80; left: 50%; bottom: 90px; width: calc(100% - 32px); max-width: 620px; padding: 13px 16px; border: 0; border-radius: 4px; background: var(--ink); color: white; box-shadow: 0 10px 30px rgba(0,0,0,.2); transform: translateX(-50%); }
 
 .auth-shell { display: flex; flex-direction: column; justify-content: center; width: min(520px, 100%); min-height: 100vh; margin: 0 auto; padding: 40px 26px; }
