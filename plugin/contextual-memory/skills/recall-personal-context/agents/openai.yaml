@@ -1,0 +1,4 @@
+interface:
+  display_name: "Recall Personal Context"
+  short_description: "Recall strongly related personal notes before reflective answers"
+  default_prompt: "Use $recall-personal-context before answering my personal idea, worry, or decision."

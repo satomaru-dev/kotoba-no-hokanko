@@ -1,0 +1,20 @@
+{
+  "name": "ことばの保管庫",
+  "short_name": "ことば",
+  "description": "自分の言葉と温度を、そのまま残す場所",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f5f0e7",
+  "theme_color": "#f5f0e7",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

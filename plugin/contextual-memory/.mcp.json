@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "contextual-memory": {
+      "command": "C:\\Users\\sxxxa\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\bin\\node.exe",
+      "args": [
+        "C:\\Users\\sxxxa\\OneDrive\\ドキュメント\\New project\\dist\\src\\stdio.js"
+      ],
+      "env": {
+        "MEMORY_FILE_PATH": "C:\\Users\\sxxxa\\OneDrive\\ドキュメント\\New project\\.data\\memories.json",
+        "MEMORY_MIN_CONFIDENCE": "0.12"
+      }
+    }
+  }
+}

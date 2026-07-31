@@ -1,0 +1,19 @@
+{
+  "name": "contextual-memory",
+  "version": "0.1.0",
+  "description": "Recall strongly related personal notes before reflective conversations.",
+  "author": {
+    "name": "Personal"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Contextual Memory",
+    "shortDescription": "Recall relevant past notes at the right moment.",
+    "longDescription": "A read-only personal memory layer that recalls up to three strongly related notes while leaving originals in their source systems.",
+    "developerName": "Personal",
+    "category": "Productivity",
+    "capabilities": ["MCP", "Skills"],
+    "defaultPrompt": "Use my contextual memory when I discuss a personal idea, worry, or decision."
+  },
+  "mcpServers": "./.mcp.json"
+}

@@ -1,0 +1,4 @@
+project_id = "kotoba-no-hokanko"
+
+[functions.memory-api]
+verify_jwt = false
