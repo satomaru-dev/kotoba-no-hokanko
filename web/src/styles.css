@@ -17,7 +17,17 @@
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; min-height: 100vh; background: var(--paper); }
 button, textarea, input { font: inherit; }
-button { color: inherit; }
+button {
+  color: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .12s ease, filter .12s ease, background-color .12s ease, box-shadow .12s ease;
+}
+button:not(:disabled):active {
+  transform: translateY(1px) scale(.98);
+  filter: brightness(.94);
+}
+button:disabled { cursor: default; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 
 .app-shell { width: min(760px, 100%); min-height: 100vh; margin: 0 auto; padding-bottom: 92px; }
