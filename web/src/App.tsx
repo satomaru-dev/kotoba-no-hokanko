@@ -231,6 +231,16 @@ export const App = () => {
   const textarea = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
+    if (!notice) return;
+    const timeoutId = window.setTimeout(() => setNotice(""), 2800);
+    return () => window.clearTimeout(timeoutId);
+  }, [notice]);
+
+  useEffect(() => {
+    setNotice("");
+  }, [tab]);
+
+  useEffect(() => {
     if (!cloudMode) return;
     void supabase!.auth.getSession().then(({ data }) => setSession(data.session));
     const { data } = supabase!.auth.onAuthStateChange((_event, next) => setSession(next));
