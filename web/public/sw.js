@@ -1,4 +1,4 @@
-const CACHE = "kotoba-shell-v3";
+const CACHE = "kotoba-shell-v4";
 const SHELL = [
   "./",
   "./manifest.webmanifest",

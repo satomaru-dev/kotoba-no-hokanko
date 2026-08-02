@@ -73,20 +73,20 @@ def fit_foreground(
 
 
 def main() -> None:
-    artwork = duotone(Image.open(SOURCE), WHITE, BLACK)
-    fit_foreground(artwork, 192, WHITE, BLACK, 0.72).save(
+    artwork = duotone(Image.open(SOURCE), BLACK, WHITE)
+    fit_foreground(artwork, 192, BLACK, WHITE, 0.72).save(
         ICON_DIR / "icon-192.png",
         optimize=True,
     )
-    fit_foreground(artwork, 512, WHITE, BLACK, 0.72).save(
+    fit_foreground(artwork, 512, BLACK, WHITE, 0.72).save(
         ICON_DIR / "icon-512.png",
         optimize=True,
     )
-    fit_foreground(artwork, 180, WHITE, BLACK, 0.72).save(
+    fit_foreground(artwork, 180, BLACK, WHITE, 0.72).save(
         ICON_DIR / "apple-touch-icon.png",
         optimize=True,
     )
-    fit_foreground(artwork, 512, WHITE, BLACK, 0.60).save(
+    fit_foreground(artwork, 512, BLACK, WHITE, 0.60).save(
         ICON_DIR / "icon-maskable-512.png",
         optimize=True,
     )
