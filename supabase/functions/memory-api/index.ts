@@ -318,6 +318,39 @@ const decryptMemos = async (admin: AdminClient, ownerId: string, rows: Record<st
   })));
 };
 
+const loadDoLaterItems = async (
+  admin: AdminClient,
+  ownerId: string,
+  view: "active" | "resolved"
+) => {
+  let query = admin.from("memo_later_items").select("*").eq("owner_id", ownerId);
+  query = view === "active"
+    ? query.eq("status", "active").order("activated_at", { ascending: false })
+    : query.in("status", ["done", "abandoned"]).order("resolved_at", { ascending: false });
+  const { data: items, error } = await query.limit(100);
+  if (error) throw error;
+  const memoIds = (items ?? []).map((item) => item.memo_id);
+  const { data: memoRows, error: memoError } = memoIds.length === 0
+    ? { data: [], error: null }
+    : await admin.from("captured_memos").select("*")
+      .eq("owner_id", ownerId).in("id", memoIds).is("deleted_at", null);
+  if (memoError) throw memoError;
+  const memos = new Map((await decryptMemos(admin, ownerId, memoRows ?? []))
+    .map((memo) => [memo.id, memo]));
+  return (items ?? []).flatMap((item) => {
+    const memo = memos.get(item.memo_id);
+    return memo ? [{ ...item, memo }] : [];
+  });
+};
+
+const loadDoLaterItem = async (admin: AdminClient, ownerId: string, memoId: string) => {
+  const active = (await loadDoLaterItems(admin, ownerId, "active"))
+    .find((item) => item.memo_id === memoId);
+  if (active) return active;
+  return (await loadDoLaterItems(admin, ownerId, "resolved"))
+    .find((item) => item.memo_id === memoId) ?? null;
+};
+
 const loadMemoryReference = async (admin: AdminClient, ownerId: string, memoryId: string) => {
   if (/^[0-9a-f-]{36}$/i.test(memoryId)) {
     const { data } = await admin.from("captured_memos").select("*")
@@ -744,6 +777,60 @@ Deno.serve(async (request) => {
       const { data, error } = await query.order("captured_at", { ascending: false }).limit(50);
       if (error) throw error;
       return json({ memos: await decryptMemos(admin, ownerId, data ?? []), next_cursor: null });
+    }
+
+    if (route === "/do-later" && request.method === "GET") {
+      const requestedView = new URL(request.url).searchParams.get("view") ?? "active";
+      if (!["active", "resolved"].includes(requestedView)) {
+        return json({ error: "invalid_request" }, 400);
+      }
+      return json({
+        items: await loadDoLaterItems(admin, ownerId, requestedView as "active" | "resolved")
+      });
+    }
+
+    const doLaterMatch = route.match(/^\/memos\/([0-9a-f-]{36})\/do-later$/i);
+    if (doLaterMatch) {
+      const memoId = doLaterMatch[1]!;
+      const { data: memo, error: memoError } = await admin.from("captured_memos").select("id")
+        .eq("id", memoId).eq("owner_id", ownerId).is("deleted_at", null).maybeSingle();
+      if (memoError) throw memoError;
+      if (!memo) return json({ error: "not_found" }, 404);
+      const now = new Date().toISOString();
+      if (request.method === "POST") {
+        const { error } = await admin.from("memo_later_items").upsert({
+          memo_id: memoId,
+          owner_id: ownerId,
+          status: "active",
+          activated_at: now,
+          updated_at: now,
+          resolved_at: null
+        }, { onConflict: "memo_id" });
+        if (error) throw error;
+        return json({ item: await loadDoLaterItem(admin, ownerId, memoId) }, 201);
+      }
+      if (request.method === "PATCH") {
+        const { data: current, error: currentError } = await admin.from("memo_later_items")
+          .select("memo_id,activated_at").eq("memo_id", memoId).eq("owner_id", ownerId).maybeSingle();
+        if (currentError) throw currentError;
+        if (!current) return json({ error: "not_found" }, 404);
+        const body = await request.json();
+        const action = String(body.action ?? "");
+        if (!["done", "later", "abandon"].includes(action)) {
+          return json({ error: "invalid_request" }, 400);
+        }
+        const status = action === "done" ? "done" : action === "abandon" ? "abandoned" : "active";
+        const updates = {
+          status,
+          activated_at: action === "later" ? now : current.activated_at,
+          updated_at: now,
+          resolved_at: status === "active" ? null : now
+        };
+        const { error } = await admin.from("memo_later_items").update(updates)
+          .eq("memo_id", memoId).eq("owner_id", ownerId);
+        if (error) throw error;
+        return json({ item: await loadDoLaterItem(admin, ownerId, memoId) });
+      }
     }
 
     const memoMatch = route.match(/^\/memos\/([0-9a-f-]{36})(\/restore)?$/i);

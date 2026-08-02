@@ -21,6 +21,30 @@ export interface CapturedMemo {
   revisions: MemoRevision[];
 }
 
+export type DoLaterStatus = "active" | "done" | "abandoned";
+
+export interface DoLaterItem {
+  memo_id: string;
+  status: DoLaterStatus;
+  activated_at: string;
+  updated_at: string;
+  resolved_at: string | null;
+  memo: CapturedMemo;
+}
+
+interface StoredDoLaterItem {
+  memo_id: string;
+  status: DoLaterStatus;
+  activated_at: string;
+  updated_at: string;
+  resolved_at: string | null;
+}
+
+interface StoredCaptureData {
+  memos: CapturedMemo[];
+  do_later: StoredDoLaterItem[];
+}
+
 const titleFromText = (text: string): string => {
   const first = text.split(/\r?\n/).map((line) => line.trim()).find(Boolean) ?? "無題のことば";
   return first.length <= 42 ? first : `${first.slice(0, 41)}…`;
@@ -28,6 +52,7 @@ const titleFromText = (text: string): string => {
 
 export class CaptureStore {
   private memos = new Map<string, CapturedMemo>();
+  private doLater = new Map<string, StoredDoLaterItem>();
 
   constructor(
     private readonly filePath: string,
@@ -36,9 +61,12 @@ export class CaptureStore {
 
   async initialize(): Promise<void> {
     try {
-      const value = JSON.parse(await fs.readFile(this.filePath, "utf8")) as CapturedMemo[];
-      this.memos = new Map(value.map((memo) => [memo.id, memo]));
-      for (const memo of value.filter((item) => !item.deleted_at)) await this.index(memo);
+      const parsed = JSON.parse(await fs.readFile(this.filePath, "utf8")) as CapturedMemo[] | StoredCaptureData;
+      const memos = Array.isArray(parsed) ? parsed : parsed.memos;
+      const doLater = Array.isArray(parsed) ? [] : parsed.do_later;
+      this.memos = new Map(memos.map((memo) => [memo.id, memo]));
+      this.doLater = new Map(doLater.map((item) => [item.memo_id, item]));
+      for (const memo of memos.filter((item) => !item.deleted_at)) await this.index(memo);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       await fs.mkdir(path.dirname(this.filePath), { recursive: true });
@@ -48,7 +76,11 @@ export class CaptureStore {
   private async persist(): Promise<void> {
     await fs.mkdir(path.dirname(this.filePath), { recursive: true });
     const temporary = `${this.filePath}.tmp`;
-    await fs.writeFile(temporary, JSON.stringify([...this.memos.values()], null, 2), "utf8");
+    const data: StoredCaptureData = {
+      memos: [...this.memos.values()],
+      do_later: [...this.doLater.values()]
+    };
+    await fs.writeFile(temporary, JSON.stringify(data, null, 2), "utf8");
     await fs.rename(temporary, this.filePath);
   }
 
@@ -134,5 +166,57 @@ export class CaptureStore {
     await this.persist();
     await this.index(memo);
     return memo;
+  }
+
+  listDoLater(view: "active" | "resolved"): DoLaterItem[] {
+    return [...this.doLater.values()]
+      .filter((item) => view === "active" ? item.status === "active" : item.status !== "active")
+      .map((item) => ({ ...item, memo: this.memos.get(item.memo_id)! }))
+      .filter((item) => item.memo && !item.memo.deleted_at)
+      .sort((left, right) => {
+        const leftDate = view === "active" ? left.activated_at : left.resolved_at ?? left.updated_at;
+        const rightDate = view === "active" ? right.activated_at : right.resolved_at ?? right.updated_at;
+        return rightDate.localeCompare(leftDate);
+      });
+  }
+
+  async addDoLater(id: string, now = new Date().toISOString()): Promise<DoLaterItem | null> {
+    const memo = this.memos.get(id);
+    if (!memo || memo.deleted_at) return null;
+    const item: StoredDoLaterItem = {
+      memo_id: id,
+      status: "active",
+      activated_at: now,
+      updated_at: now,
+      resolved_at: null
+    };
+    this.doLater.set(id, item);
+    await this.persist();
+    return { ...item, memo };
+  }
+
+  async updateDoLater(
+    id: string,
+    action: "done" | "later" | "abandon",
+    now = new Date().toISOString()
+  ): Promise<DoLaterItem | null> {
+    const memo = this.memos.get(id);
+    const current = this.doLater.get(id);
+    if (!memo || memo.deleted_at || !current) return null;
+    const status: DoLaterStatus = action === "done"
+      ? "done"
+      : action === "abandon"
+        ? "abandoned"
+        : "active";
+    const item: StoredDoLaterItem = {
+      ...current,
+      status,
+      activated_at: action === "later" ? now : current.activated_at,
+      updated_at: now,
+      resolved_at: status === "active" ? null : now
+    };
+    this.doLater.set(id, item);
+    await this.persist();
+    return { ...item, memo };
   }
 }

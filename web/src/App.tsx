@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { Session } from "@supabase/supabase-js";
 import {
+  addDoLater,
   addIdeaThreadEntry,
   cancelReminder,
   captureMemo,
@@ -11,6 +12,7 @@ import {
   getIdeaThread,
   getPushPublicKey,
   listDueReminders,
+  listDoLater,
   listMemos,
   markReminderOpened,
   restoreMemo,
@@ -19,6 +21,7 @@ import {
   searchMemories,
   supabase,
   trashMemo,
+  updateDoLater,
   updateMemo
 } from "./api";
 import {
@@ -32,6 +35,8 @@ import {
 } from "./offline";
 import type {
   CaptureInput,
+  DoLaterAction,
+  DoLaterItem,
   FeedbackVerdict,
   IdeaThread,
   Memo,
@@ -40,7 +45,7 @@ import type {
   ReminderInput
 } from "./types";
 
-type Tab = "write" | "search" | "recent";
+type Tab = "write" | "do-later" | "search" | "recent";
 type InstallPrompt = Event & { prompt: () => Promise<void> };
 
 const DIALOGUE_BETA = import.meta.env.VITE_DIALOGUE_BETA === "true";
@@ -205,6 +210,7 @@ export const App = () => {
   const [saveState, setSaveState] = useState<"idle" | "saved" | "queued">("idle");
   const [related, setRelated] = useState<RelatedMemory[]>([]);
   const [lastSavedMemo, setLastSavedMemo] = useState<Memo | null>(null);
+  const [lastSavedMarked, setLastSavedMarked] = useState(false);
   const [showReminder, setShowReminder] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [query, setQuery] = useState("");
@@ -212,6 +218,9 @@ export const App = () => {
   const [searchResults, setSearchResults] = useState<RelatedMemory[]>([]);
   const [memos, setMemos] = useState<Memo[]>([]);
   const [trash, setTrash] = useState<Memo[]>([]);
+  const [doLaterActive, setDoLaterActive] = useState<DoLaterItem[]>([]);
+  const [doLaterResolved, setDoLaterResolved] = useState<DoLaterItem[]>([]);
+  const [showDoLaterHistory, setShowDoLaterHistory] = useState(false);
   const [showTrash, setShowTrash] = useState(false);
   const [selected, setSelected] = useState<Memo | null>(null);
   const [selectedMemory, setSelectedMemory] = useState<RelatedMemory | null>(null);
@@ -289,9 +298,26 @@ export const App = () => {
     }
   }, [session]);
 
+  const refreshDoLater = useCallback(async () => {
+    try {
+      const [active, resolved] = await Promise.all([
+        listDoLater("active"),
+        listDoLater("resolved")
+      ]);
+      setDoLaterActive(active);
+      setDoLaterResolved(resolved);
+    } catch {
+      setNotice("「あとでやる」を読み込めませんでした。メモは消えていません。");
+    }
+  }, []);
+
   useEffect(() => {
     if (tab === "recent" && (!cloudMode || session)) void refreshMemos();
   }, [tab, session, refreshMemos]);
+
+  useEffect(() => {
+    if (tab === "do-later" && (!cloudMode || session)) void refreshDoLater();
+  }, [tab, session, refreshDoLater]);
 
   useEffect(() => {
     if (!session && cloudMode) return;
@@ -327,6 +353,7 @@ export const App = () => {
     setSaving(true);
     setRelated([]);
     setLastSavedMemo(null);
+    setLastSavedMarked(false);
     setShowReminder(false);
     setSaveState("idle");
     const input: CaptureInput = {
@@ -445,7 +472,29 @@ export const App = () => {
     }
   };
 
+  const markDoLater = async (memo: Memo) => {
+    try {
+      await addDoLater(memo.id);
+      if (lastSavedMemo?.id === memo.id) setLastSavedMarked(true);
+      await refreshDoLater();
+      setNotice("「あとでやる」に置きました。");
+    } catch {
+      setNotice("今は「あとでやる」に置けませんでした。メモは残っています。");
+    }
+  };
+
+  const actOnDoLater = async (memoId: string, action: DoLaterAction) => {
+    try {
+      await updateDoLater(memoId, action);
+      await refreshDoLater();
+      if (action === "later") setNotice("一覧の先頭へ戻しました。");
+    } catch {
+      setNotice("今は変更できませんでした。元のメモは変わっていません。");
+    }
+  };
+
   const navTitle = useMemo(() => {
+    if (tab === "do-later") return "あとでやる";
     if (tab === "search") return "言葉をさがす";
     if (tab === "recent") return "最近の言葉";
     return "ことばの保管庫";
@@ -524,6 +573,15 @@ export const App = () => {
                 </small>
               </div>
             )}
+            {saveState === "saved" && lastSavedMemo && (
+              <button
+                className="do-later-mark-button"
+                disabled={lastSavedMarked}
+                onClick={() => void markDoLater(lastSavedMemo)}
+              >
+                {lastSavedMarked ? "あとでやるに置きました" : "あとでやる"}
+              </button>
+            )}
             {REMINDER_BETA && showReminder && lastSavedMemo && (
               <ReminderChooser
                 onSchedule={(date) => void scheduleReminder(date)}
@@ -539,6 +597,56 @@ export const App = () => {
               onLink={(memory) => void beginThread(memory.memory_id, lastSavedMemo?.id)}
             />
           </>
+        )}
+
+        {tab === "do-later" && (
+          <section className="do-later-panel">
+            <p className="do-later-intro">行動につながりそうな言葉を、ここでもう一度。</p>
+            <div className="do-later-list">
+              {doLaterActive.map((item) => (
+                <article className="do-later-card" key={item.memo_id}>
+                  <button className="do-later-main" onClick={() => setSelected(item.memo)}>
+                    <time>{formatDate(item.memo.captured_at)}</time>
+                    <strong>{item.memo.title}</strong>
+                    <span>{item.memo.current_text}</span>
+                  </button>
+                  <div className="do-later-actions">
+                    <button onClick={() => void actOnDoLater(item.memo_id, "done")}>やってやった。</button>
+                    <button onClick={() => void actOnDoLater(item.memo_id, "later")}>もう少しあとで。</button>
+                    <button onClick={() => void actOnDoLater(item.memo_id, "abandon")}>やっぱりやめる。</button>
+                  </div>
+                </article>
+              ))}
+              {doLaterActive.length === 0 && (
+                <p className="empty-message">いま「あとでやる」に置いている言葉はありません。</p>
+              )}
+            </div>
+            <section className="do-later-history">
+              <button
+                className="do-later-history-toggle"
+                onClick={() => setShowDoLaterHistory((value) => !value)}
+                aria-expanded={showDoLaterHistory}
+              >
+                <span>これまで</span><span>{showDoLaterHistory ? "−" : "＋"}</span>
+              </button>
+              {showDoLaterHistory && (
+                <div className="do-later-history-list">
+                  {doLaterResolved.map((item) => (
+                    <button key={item.memo_id} onClick={() => setSelected(item.memo)}>
+                      <span className={`do-later-result ${item.status}`}>
+                        {item.status === "done" ? "やってやった。" : "やっぱりやめる。"}
+                      </span>
+                      <strong>{item.memo.title}</strong>
+                      <time>{formatDate(item.resolved_at)}</time>
+                    </button>
+                  ))}
+                  {doLaterResolved.length === 0 && (
+                    <p className="empty-message">これまでの結果は、まだありません。</p>
+                  )}
+                </div>
+              )}
+            </section>
+          </section>
         )}
 
         {tab === "search" && (
@@ -601,6 +709,9 @@ export const App = () => {
         <button className={tab === "write" ? "active" : ""} onClick={() => setTab("write")}>
           <span className="nav-icon">＋</span><span>書く</span>
         </button>
+        <button className={tab === "do-later" ? "active" : ""} onClick={() => setTab("do-later")}>
+          <span className="nav-icon">◦</span><span>あとでやる</span>
+        </button>
         <button className={tab === "search" ? "active" : ""} onClick={() => setTab("search")}>
           <span className="nav-icon">⌕</span><span>さがす</span>
         </button>
@@ -614,6 +725,7 @@ export const App = () => {
           memo={selected}
           onClose={() => setSelected(null)}
           onDialogue={DIALOGUE_BETA ? () => void beginThread(selected.id) : undefined}
+          onDoLater={!selected.deleted_at ? () => void markDoLater(selected) : undefined}
           onChanged={async () => {
             setSelected(null);
             await refreshMemos();
@@ -771,12 +883,14 @@ const MemoDialog = ({
   memo,
   onClose,
   onChanged,
-  onDialogue
+  onDialogue,
+  onDoLater
 }: {
   memo: Memo;
   onClose: () => void;
   onChanged: () => Promise<void>;
   onDialogue?: () => void;
+  onDoLater?: () => void;
 }) => {
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(memo.title);
@@ -834,6 +948,11 @@ const MemoDialog = ({
         {onDialogue && !memo.deleted_at && !editing && (
           <button className="dialogue-button" onClick={onDialogue}>
             今の自分から返す <span>β</span>
+          </button>
+        )}
+        {onDoLater && !editing && (
+          <button className="do-later-dialog-button" onClick={onDoLater}>
+            あとでやる
           </button>
         )}
         <div className="dialog-actions">

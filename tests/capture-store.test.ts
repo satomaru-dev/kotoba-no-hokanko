@@ -55,4 +55,36 @@ describe("capture store", () => {
     await store.restore(id);
     expect((await runtime.recall.recall("斬新すぎるアイデア")).results).toHaveLength(1);
   });
+
+  it("keeps a single do-later state without changing the memo", async () => {
+    const { store } = await makeStore();
+    const firstId = "33333333-3333-4333-8333-333333333333";
+    const secondId = "44444444-4444-4444-8444-444444444444";
+    const first = await store.capture(firstId, "あとで試したいアイデア", "2026-08-01T00:00:00.000Z");
+    await store.capture(secondId, "もう一つのアイデア", "2026-08-01T01:00:00.000Z");
+
+    await store.addDoLater(firstId, "2026-08-01T02:00:00.000Z");
+    await store.addDoLater(secondId, "2026-08-01T03:00:00.000Z");
+    await store.addDoLater(firstId, "2026-08-01T04:00:00.000Z");
+    expect(store.listDoLater("active").map((item) => item.memo_id)).toEqual([firstId, secondId]);
+
+    await store.updateDoLater(firstId, "done", "2026-08-01T05:00:00.000Z");
+    expect(store.listDoLater("active").map((item) => item.memo_id)).toEqual([secondId]);
+    expect(store.listDoLater("resolved")[0]?.status).toBe("done");
+
+    await store.addDoLater(firstId, "2026-08-01T06:00:00.000Z");
+    expect(store.listDoLater("resolved")).toHaveLength(0);
+    expect(store.get(firstId)).toEqual(first);
+  });
+
+  it("hides deleted do-later items and shows them again after restore", async () => {
+    const { store } = await makeStore();
+    const id = "55555555-5555-4555-8555-555555555555";
+    await store.capture(id, "あとでやるかもしれない", "2026-08-01T00:00:00.000Z");
+    await store.addDoLater(id, "2026-08-01T01:00:00.000Z");
+    await store.trash(id);
+    expect(store.listDoLater("active")).toHaveLength(0);
+    await store.restore(id);
+    expect(store.listDoLater("active").map((item) => item.memo_id)).toEqual([id]);
+  });
 });
