@@ -6,16 +6,15 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[1]
 ICON_DIR = ROOT / "web" / "public" / "icons"
 SOURCE = ROOT / "docs" / "icon-concepts" / "final-front-squirrel-source.png"
-BACKGROUND = (245, 240, 231)
-ACCENT = (168, 73, 47)
+AMBER = (234, 147, 10)
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 
 
 def duotone(
     image: Image.Image,
-    background: tuple[int, int, int] = BACKGROUND,
-    accent: tuple[int, int, int] = ACCENT,
+    background: tuple[int, int, int] = AMBER,
+    accent: tuple[int, int, int] = WHITE,
 ) -> Image.Image:
     """Collapse the generated artwork to the app's exact two-color palette."""
     image = image.convert("RGB")
@@ -38,11 +37,26 @@ def duotone(
 def square_resize(
     image: Image.Image,
     size: int,
-    background: tuple[int, int, int] = BACKGROUND,
-    accent: tuple[int, int, int] = ACCENT,
+    background: tuple[int, int, int] = AMBER,
+    accent: tuple[int, int, int] = WHITE,
 ) -> Image.Image:
     resized = image.resize((size, size), Image.Resampling.LANCZOS)
     return duotone(resized, background, accent)
+
+
+def swap_palette(
+    image: Image.Image,
+    background: tuple[int, int, int],
+    foreground: tuple[int, int, int],
+) -> Image.Image:
+    image = image.convert("RGB")
+    pixels = [
+        background if pixel == WHITE else foreground
+        for pixel in image.get_flattened_data()
+    ]
+    result = Image.new("RGB", image.size)
+    result.putdata(pixels)
+    return result
 
 
 def fit_foreground(
@@ -74,19 +88,20 @@ def fit_foreground(
 
 def main() -> None:
     artwork = duotone(Image.open(SOURCE), WHITE, BLACK)
-    fit_foreground(artwork, 192, WHITE, BLACK, 0.72).save(
+    artwork = swap_palette(artwork, AMBER, WHITE)
+    fit_foreground(artwork, 192, AMBER, WHITE, 0.72).save(
         ICON_DIR / "icon-192.png",
         optimize=True,
     )
-    fit_foreground(artwork, 512, WHITE, BLACK, 0.72).save(
+    fit_foreground(artwork, 512, AMBER, WHITE, 0.72).save(
         ICON_DIR / "icon-512.png",
         optimize=True,
     )
-    fit_foreground(artwork, 180, WHITE, BLACK, 0.72).save(
+    fit_foreground(artwork, 180, AMBER, WHITE, 0.72).save(
         ICON_DIR / "apple-touch-icon.png",
         optimize=True,
     )
-    fit_foreground(artwork, 512, WHITE, BLACK, 0.60).save(
+    fit_foreground(artwork, 512, AMBER, WHITE, 0.60).save(
         ICON_DIR / "icon-maskable-512.png",
         optimize=True,
     )
