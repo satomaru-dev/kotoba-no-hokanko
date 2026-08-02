@@ -11,6 +11,10 @@ const corsHeaders = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: corsHeaders });
 
+const additionalAllowedEmails = [
+  "sato@aflac-sp.jp"
+];
+
 const bytesToBase64 = (bytes: Uint8Array): string => {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -143,9 +147,10 @@ const authenticate = async (request: Request, admin: AdminClient): Promise<strin
   const token = authorization.slice(7);
   const { data, error } = await admin.auth.getUser(token);
   if (error || !data.user) return null;
-  const allowed = (Deno.env.get("MEMORY_ALLOWED_EMAILS") ?? "")
+  const configuredAllowed = (Deno.env.get("MEMORY_ALLOWED_EMAILS") ?? "")
     .split(",").map((email) => email.trim().toLowerCase()).filter(Boolean);
-  if (allowed.length > 0 && !allowed.includes(data.user.email?.toLowerCase() ?? "")) return null;
+  const allowed = new Set([...configuredAllowed, ...additionalAllowedEmails]);
+  if (configuredAllowed.length > 0 && !allowed.has(data.user.email?.toLowerCase() ?? "")) return null;
   return data.user.id;
 };
 
