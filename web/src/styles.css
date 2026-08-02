@@ -177,6 +177,10 @@ button:disabled { cursor: default; }
 .error-text { color: var(--accent); font-size: 12px; }
 .loading-screen { display: grid; min-height: 100vh; place-items: center; }
 
+@media (max-width: 619px) {
+  .write-panel textarea { min-height: 31vh; max-height: 48vh; }
+}
+
 @media (min-width: 620px) {
   .content { padding-inline: 28px; }
   .topbar { padding-inline: 32px; }

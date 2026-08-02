@@ -229,6 +229,7 @@ export const App = () => {
   const [installPrompt, setInstallPrompt] = useState<InstallPrompt | null>(null);
   const [notice, setNotice] = useState("");
   const textarea = useRef<HTMLTextAreaElement>(null);
+  const saveMessage = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!notice) return;
@@ -383,9 +384,12 @@ export const App = () => {
       await refreshPending();
       setSaveState("queued");
     } finally {
+      textarea.current?.blur();
       setText("");
       setSaving(false);
-      window.setTimeout(() => textarea.current?.focus(), 50);
+      window.setTimeout(() => {
+        saveMessage.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 80);
     }
   };
 
@@ -577,7 +581,7 @@ export const App = () => {
               </div>
             </section>
             {saveState !== "idle" && (
-              <div className={`save-message ${saveState}`}>
+              <div ref={saveMessage} className={`save-message ${saveState}`}>
                 <span>{saveState === "saved" ? "残しました。" : "端末に預かりました。"}</span>
                 <small>
                   {saveState === "saved"
