@@ -22,6 +22,9 @@ button { color: inherit; }
 
 .app-shell { width: min(760px, 100%); min-height: 100vh; margin: 0 auto; padding-bottom: 92px; }
 .topbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: max(28px, env(safe-area-inset-top)) 22px 20px; }
+.topbar-brand { display: flex; align-items: center; min-width: 0; gap: 11px; }
+.topbar-brand > div { min-width: 0; }
+.header-mascot { display: block; flex: 0 0 auto; width: 46px; height: 46px; border-radius: 13px; object-fit: cover; }
 .eyebrow { margin: 0 0 6px; color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
 .topbar h1 { margin: 0; font-family: "Yu Mincho", "Hiragino Mincho ProN", serif; font-size: clamp(25px, 7vw, 34px); font-weight: 600; letter-spacing: .02em; }
 .install-button { padding: 9px 12px; border: 1px solid var(--line); border-radius: 999px; background: transparent; font-size: 12px; font-weight: 700; white-space: nowrap; }
@@ -153,9 +156,7 @@ button { color: inherit; }
 .notice { position: fixed; z-index: 80; left: 50%; bottom: 90px; width: calc(100% - 32px); max-width: 620px; padding: 13px 16px; border: 0; border-radius: 4px; background: var(--ink); color: white; box-shadow: 0 10px 30px rgba(0,0,0,.2); transform: translateX(-50%); }
 
 .auth-shell { display: flex; flex-direction: column; justify-content: center; width: min(520px, 100%); min-height: 100vh; margin: 0 auto; padding: 40px 26px; }
-.brand-mark { display: grid; gap: 6px; width: 54px; padding: 13px 11px; border-radius: 4px 15px 4px 4px; background: var(--ink); }
-.brand-mark i { display: block; height: 3px; border-radius: 2px; background: #f5f0e7; }
-.brand-mark i:last-child { width: 62%; background: #c56447; }
+.brand-mascot { display: block; width: 64px; height: 64px; border-radius: 18px; object-fit: cover; }
 .auth-shell .eyebrow { margin-top: 28px; }
 .auth-shell h1 { margin: 0 0 36px; font-family: "Yu Mincho", serif; font-size: clamp(31px, 9vw, 45px); line-height: 1.45; font-weight: 500; }
 .auth-form label { display: block; margin-bottom: 8px; color: var(--muted); font-size: 12px; }

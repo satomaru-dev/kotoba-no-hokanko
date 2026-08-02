@@ -1,5 +1,12 @@
-const CACHE = "kotoba-shell-v2";
-const SHELL = ["./", "./manifest.webmanifest", "./icon.svg"];
+const CACHE = "kotoba-shell-v3";
+const SHELL = [
+  "./",
+  "./manifest.webmanifest",
+  "./icons/icon-192.png",
+  "./icons/icon-512.png",
+  "./icons/icon-maskable-512.png",
+  "./icons/apple-touch-icon.png",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)));
@@ -40,8 +47,8 @@ self.addEventListener("push", (event) => {
       payload.title || "もう一度考えたかった言葉があります",
       {
         body: payload.body || "",
-        icon: "./icon.svg",
-        badge: "./icon.svg",
+        icon: "./icons/icon-192.png",
+        badge: "./icons/icon-192.png",
         tag: payload.reminder_id || "kotoba-reminder",
         renotify: true,
         data: {

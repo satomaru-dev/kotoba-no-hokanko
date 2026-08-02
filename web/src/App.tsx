@@ -175,7 +175,7 @@ const AuthScreen = ({ onReady }: { onReady: (session: Session) => void }) => {
   }, [onReady]);
   return (
     <main className="auth-shell">
-      <div className="brand-mark" aria-hidden="true"><i /><i /><i /></div>
+      <img className="brand-mascot" src="./icons/icon-192.png" alt="" aria-hidden="true" />
       <p className="eyebrow">ことばの保管庫</p>
       <h1>自分の言葉に、<br />帰ってこられる場所。</h1>
       {sent ? (
@@ -501,16 +501,19 @@ export const App = () => {
   }, [tab]);
 
   if (session === undefined) {
-    return <main className="loading-screen"><div className="brand-mark"><i /><i /><i /></div></main>;
+    return <main className="loading-screen"><img className="brand-mascot" src="./icons/icon-192.png" alt="" aria-hidden="true" /></main>;
   }
   if (cloudMode && !session) return <AuthScreen onReady={setSession} />;
 
   return (
     <div className="app-shell">
       <header className="topbar">
-        <div>
-          <p className="eyebrow">{tab === "write" ? "自分の言葉と温度を、そのまま" : "保管庫"}</p>
-          <h1>{navTitle}</h1>
+        <div className="topbar-brand">
+          <img className="header-mascot" src="./icons/icon-192.png" alt="" aria-hidden="true" />
+          <div>
+            <p className="eyebrow">{tab === "write" ? "自分の言葉と温度を、そのまま" : "保管庫"}</p>
+            <h1>{navTitle}</h1>
+          </div>
         </div>
         {installPrompt && (
           <button className="install-button" onClick={() => void installPrompt.prompt()}>
