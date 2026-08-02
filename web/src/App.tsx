@@ -110,7 +110,7 @@ const RelatedCards = ({
   return (
     <section className="related-section" aria-live="polite">
       <p className="eyebrow">過去の言葉との再会</p>
-      <h2>近くに、こんな記録がありました</h2>
+      <h2>{memories.length}件、近い順に並べました</h2>
       <div className="related-list">
         {memories.map((memory) => (
           <article className="memory-card" key={memory.memory_id}>

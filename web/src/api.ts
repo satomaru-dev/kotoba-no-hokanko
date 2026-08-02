@@ -49,7 +49,7 @@ export const captureMemo = (input: CaptureInput): Promise<CaptureResponse> =>
 export const searchMemories = async (query: string): Promise<RelatedMemory[]> => {
   const result = await request<{ query: string; results: RelatedMemory[] }>(
     "/search",
-    { method: "POST", body: JSON.stringify({ query }) }
+    { method: "POST", body: JSON.stringify({ query, max_results: 10 }) }
   );
   return result.results;
 };

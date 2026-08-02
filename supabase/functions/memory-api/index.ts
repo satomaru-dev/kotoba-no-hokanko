@@ -188,8 +188,11 @@ const recall = async (
   admin: AdminClient,
   ownerId: string,
   query: string,
-  excludeId?: string
+  excludeId?: string,
+  requestedMax = 10,
+  minimumScore = 0.1
 ) => {
+  const maxResults = Math.min(10, Math.max(1, Math.trunc(requestedMax)));
   const indexed = await indexText(query);
   const { data, error } = await admin.rpc("match_user_memories", {
     p_owner_id: ownerId,
@@ -248,12 +251,12 @@ const recall = async (
 
   const seen = new Set<string>();
   const picked = ranked.filter(({ row, excerpt, score }) => {
-    if (row.memory_id === excludeId || rejected.has(row.memory_id) || score < 0.24) return false;
+    if (row.memory_id === excludeId || rejected.has(row.memory_id) || score < minimumScore) return false;
     const key = `${row.source_type}:${excerpt.normalize("NFKC").slice(0, 100)}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
-  }).slice(0, 3);
+  }).slice(0, maxResults);
   const metadata = await threadMetadata(admin, ownerId, picked.map(({ row }) => row));
 
   return picked.map(({ row, title, excerpt, score }, index) => {
@@ -494,7 +497,7 @@ Deno.serve(async (request) => {
         const [memo] = await decryptMemos(admin, ownerId, [existing]);
         return json({ memo, related: [] });
       }
-      const related = await recall(admin, ownerId, text, id);
+      const related = await recall(admin, ownerId, text, id, 10, 0.1);
       const title = titleFromText(text);
       const indexed = await indexText(`${title}\n${text}`);
       const cipher = await encrypt(text);
@@ -519,7 +522,12 @@ Deno.serve(async (request) => {
       const body = await request.json();
       const query = String(body.query ?? "").trim();
       if (query.length < 2 || query.length > 20_000) return json({ error: "invalid_request" }, 400);
-      return json({ query, results: await recall(admin, ownerId, query) });
+      const requestedMax = Math.min(10, Math.max(1, Math.trunc(Number(body.max_results) || 10)));
+      const minimumScore = requestedMax <= 3 ? 0.24 : 0.1;
+      return json({
+        query,
+        results: await recall(admin, ownerId, query, undefined, requestedMax, minimumScore)
+      });
     }
 
     if (route === "/feedback" && request.method === "POST") {
