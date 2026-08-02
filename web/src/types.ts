@@ -85,3 +85,15 @@ export interface ReminderInput {
   memo_id: string;
   remind_at: string;
 }
+
+export type DoLaterStatus = "active" | "done" | "abandoned";
+export type DoLaterAction = "done" | "later" | "abandon";
+
+export interface DoLaterItem {
+  memo_id: string;
+  status: DoLaterStatus;
+  activated_at: string;
+  updated_at: string;
+  resolved_at: string | null;
+  memo: Memo;
+}

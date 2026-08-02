@@ -40,7 +40,7 @@ app.post("/api/capture", async (request: Request, response: Response, next: Next
     const existing = captures.get(input.client_id);
     const related = existing
       ? { results: [] }
-      : await runtime.recall.recall(input.text, 3);
+      : await runtime.recall.recall(input.text, 10);
     const memo = await captures.capture(
       input.client_id,
       input.text,
@@ -55,7 +55,7 @@ app.post("/api/capture", async (request: Request, response: Response, next: Next
 app.post("/api/search", async (request: Request, response: Response, next: NextFunction) => {
   try {
     const { query } = z.object({ query: z.string().trim().min(2).max(20_000) }).parse(request.body);
-    response.json(await runtime.recall.recall(query, 3));
+    response.json(await runtime.recall.recall(query, 10));
   } catch (error) {
     next(error);
   }
@@ -120,6 +120,40 @@ app.post("/api/memos/:id/restore", async (request: Request, response: Response, 
       return;
     }
     response.json({ memo });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/do-later", (request: Request, response: Response) => {
+  const view = request.query.view === "resolved" ? "resolved" : "active";
+  response.json({ items: captures.listDoLater(view) });
+});
+
+app.post("/api/memos/:id/do-later", async (request: Request, response: Response, next: NextFunction) => {
+  try {
+    const item = await captures.addDoLater(String(request.params.id ?? ""));
+    if (!item) {
+      response.status(404).json({ error: "not_found" });
+      return;
+    }
+    response.status(201).json({ item });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch("/api/memos/:id/do-later", async (request: Request, response: Response, next: NextFunction) => {
+  try {
+    const { action } = z.object({
+      action: z.enum(["done", "later", "abandon"])
+    }).parse(request.body);
+    const item = await captures.updateDoLater(String(request.params.id ?? ""), action);
+    if (!item) {
+      response.status(404).json({ error: "not_found" });
+      return;
+    }
+    response.json({ item });
   } catch (error) {
     next(error);
   }

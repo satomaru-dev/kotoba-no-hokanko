@@ -2,6 +2,8 @@ import { createClient, type Session } from "@supabase/supabase-js";
 import type {
   CaptureInput,
   CaptureResponse,
+  DoLaterAction,
+  DoLaterItem,
   FeedbackVerdict,
   IdeaThread,
   Memo,
@@ -148,3 +150,26 @@ export const markReminderOpened = (id: string) =>
 
 export const cancelReminder = (id: string): Promise<void> =>
   request(`/reminders/${id}`, { method: "DELETE" });
+
+export const listDoLater = async (view: "active" | "resolved"): Promise<DoLaterItem[]> => {
+  const result = await request<{ items: DoLaterItem[] }>(`/do-later?view=${view}`);
+  return result.items;
+};
+
+export const addDoLater = async (memoId: string): Promise<DoLaterItem> => {
+  const result = await request<{ item: DoLaterItem }>(`/memos/${memoId}/do-later`, {
+    method: "POST"
+  });
+  return result.item;
+};
+
+export const updateDoLater = async (
+  memoId: string,
+  action: DoLaterAction
+): Promise<DoLaterItem> => {
+  const result = await request<{ item: DoLaterItem }>(`/memos/${memoId}/do-later`, {
+    method: "PATCH",
+    body: JSON.stringify({ action })
+  });
+  return result.item;
+};
