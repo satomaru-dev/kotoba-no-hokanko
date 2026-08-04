@@ -43,7 +43,13 @@ button:disabled { cursor: default; }
 .write-panel { overflow: hidden; border: 1px solid var(--line); border-radius: 3px 20px 3px 3px; background: var(--card); box-shadow: 0 14px 35px rgba(59, 45, 29, .07); }
 .write-panel textarea { display: block; width: 100%; min-height: 48vh; max-height: 62vh; resize: vertical; padding: 25px 22px; border: 0; outline: 0; background: transparent; color: var(--ink); font-family: "Yu Mincho", "Hiragino Mincho ProN", serif; font-size: 19px; line-height: 1.9; }
 .write-panel textarea::placeholder { color: #aaa296; }
-.write-actions { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 14px 14px 20px; border-top: 1px solid #e8e0d4; }
+.voice-mode-panel { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 13px 18px; border-bottom: 1px solid #e8e0d4; background: #fff7e8; color: var(--accent-dark); }
+.voice-mode-panel strong { font-size: 13px; }
+.voice-mode-panel span { color: var(--muted); font-size: 12px; }
+.voice-mode-panel small { flex-basis: 100%; color: var(--muted); font-size: 11px; }
+.voice-button { padding: 8px 12px; border: 1px solid #cbbdaa; border-radius: 999px; background: #fffdf8; color: var(--accent-dark); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.voice-mode-button { margin-left: auto; }
+.write-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding: 14px 14px 14px 20px; border-top: 1px solid #e8e0d4; }
 .quiet-status { color: var(--muted); font-size: 12px; }
 .save-button { min-width: 104px; padding: 13px 24px; border: 0; border-radius: 2px 13px 2px 2px; background: var(--ink); color: white; font-weight: 700; letter-spacing: .08em; transition: transform .15s, opacity .15s; }
 .save-button:active { transform: scale(.97); }
