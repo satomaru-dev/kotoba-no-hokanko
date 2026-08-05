@@ -95,5 +95,14 @@ export interface DoLaterItem {
   activated_at: string;
   updated_at: string;
   resolved_at: string | null;
+  first_step: string | null;
+  launch_url: string | null;
+  roulette_enabled: boolean;
   memo: Memo;
+}
+
+export interface DoLaterConfiguration {
+  first_step: string | null;
+  launch_url: string | null;
+  roulette_enabled: boolean;
 }

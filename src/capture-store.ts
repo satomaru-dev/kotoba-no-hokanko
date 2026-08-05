@@ -29,6 +29,9 @@ export interface DoLaterItem {
   activated_at: string;
   updated_at: string;
   resolved_at: string | null;
+  first_step: string | null;
+  launch_url: string | null;
+  roulette_enabled: boolean;
   memo: CapturedMemo;
 }
 
@@ -38,6 +41,15 @@ interface StoredDoLaterItem {
   activated_at: string;
   updated_at: string;
   resolved_at: string | null;
+  first_step: string | null;
+  launch_url: string | null;
+  roulette_enabled: boolean;
+}
+
+export interface DoLaterConfiguration {
+  first_step: string | null;
+  launch_url: string | null;
+  roulette_enabled: boolean;
 }
 
 interface StoredCaptureData {
@@ -63,9 +75,14 @@ export class CaptureStore {
     try {
       const parsed = JSON.parse(await fs.readFile(this.filePath, "utf8")) as CapturedMemo[] | StoredCaptureData;
       const memos = Array.isArray(parsed) ? parsed : parsed.memos;
-      const doLater = Array.isArray(parsed) ? [] : parsed.do_later;
+      const doLater = Array.isArray(parsed) ? [] : (parsed.do_later ?? []);
       this.memos = new Map(memos.map((memo) => [memo.id, memo]));
-      this.doLater = new Map(doLater.map((item) => [item.memo_id, item]));
+      this.doLater = new Map(doLater.map((item) => [item.memo_id, {
+        first_step: null,
+        launch_url: null,
+        roulette_enabled: false,
+        ...(item as Partial<StoredDoLaterItem>)
+      } as StoredDoLaterItem]));
       for (const memo of memos.filter((item) => !item.deleted_at)) await this.index(memo);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
@@ -183,7 +200,13 @@ export class CaptureStore {
   async addDoLater(id: string, now = new Date().toISOString()): Promise<DoLaterItem | null> {
     const memo = this.memos.get(id);
     if (!memo || memo.deleted_at) return null;
+    const previous = this.doLater.get(id);
     const item: StoredDoLaterItem = {
+      ...(previous ?? {
+        first_step: null,
+        launch_url: null,
+        roulette_enabled: false
+      }),
       memo_id: id,
       status: "active",
       activated_at: now,
@@ -215,6 +238,20 @@ export class CaptureStore {
       updated_at: now,
       resolved_at: status === "active" ? null : now
     };
+    this.doLater.set(id, item);
+    await this.persist();
+    return { ...item, memo };
+  }
+
+  async configureDoLater(
+    id: string,
+    configuration: DoLaterConfiguration,
+    now = new Date().toISOString()
+  ): Promise<DoLaterItem | null> {
+    const memo = this.memos.get(id);
+    const current = this.doLater.get(id);
+    if (!memo || memo.deleted_at || !current) return null;
+    const item: StoredDoLaterItem = { ...current, ...configuration, updated_at: now };
     this.doLater.set(id, item);
     await this.persist();
     return { ...item, memo };
