@@ -145,10 +145,17 @@ app.post("/api/memos/:id/do-later", async (request: Request, response: Response,
 
 app.patch("/api/memos/:id/do-later", async (request: Request, response: Response, next: NextFunction) => {
   try {
-    const { action } = z.object({
-      action: z.enum(["done", "later", "abandon"])
-    }).parse(request.body);
-    const item = await captures.updateDoLater(String(request.params.id ?? ""), action);
+    const body = request.body as { action?: string; configuration?: unknown };
+    const id = String(request.params.id ?? "");
+    const item = body.configuration !== undefined
+      ? await captures.configureDoLater(id, z.object({
+          first_step: z.string().max(500).nullable(),
+          launch_url: z.string().url().refine((value) => /^https?:$/.test(new URL(value).protocol)).nullable(),
+          roulette_enabled: z.boolean()
+        }).parse(body.configuration))
+      : await captures.updateDoLater(id, z.object({
+          action: z.enum(["done", "later", "abandon"])
+        }).parse(body).action);
     if (!item) {
       response.status(404).json({ error: "not_found" });
       return;

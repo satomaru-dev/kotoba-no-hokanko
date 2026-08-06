@@ -33,6 +33,7 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
           VITE_DIALOGUE_BETA: ${{ vars.VITE_DIALOGUE_BETA || 'true' }}
           VITE_REMINDER_BETA: ${{ vars.VITE_REMINDER_BETA || 'true' }}
+          VITE_START_ASSIST_BETA: ${{ vars.VITE_START_ASSIST_BETA || 'true' }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:

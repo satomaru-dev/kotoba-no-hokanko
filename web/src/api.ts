@@ -3,6 +3,7 @@ import type {
   CaptureInput,
   CaptureResponse,
   DoLaterAction,
+  DoLaterConfiguration,
   DoLaterItem,
   FeedbackVerdict,
   IdeaThread,
@@ -170,6 +171,17 @@ export const updateDoLater = async (
   const result = await request<{ item: DoLaterItem }>(`/memos/${memoId}/do-later`, {
     method: "PATCH",
     body: JSON.stringify({ action })
+  });
+  return result.item;
+};
+
+export const configureDoLater = async (
+  memoId: string,
+  configuration: DoLaterConfiguration
+): Promise<DoLaterItem> => {
+  const result = await request<{ item: DoLaterItem }>(`/memos/${memoId}/do-later`, {
+    method: "PATCH",
+    body: JSON.stringify({ configuration })
   });
   return result.item;
 };

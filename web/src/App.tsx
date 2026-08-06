@@ -7,6 +7,7 @@ import {
   cancelReminder,
   captureMemo,
   cloudMode,
+  configureDoLater,
   createIdeaThread,
   createReminder,
   getIdeaThread,
@@ -50,6 +51,7 @@ type InstallPrompt = Event & { prompt: () => Promise<void> };
 
 const DIALOGUE_BETA = import.meta.env.VITE_DIALOGUE_BETA === "true";
 const REMINDER_BETA = import.meta.env.VITE_REMINDER_BETA === "true";
+const START_ASSIST_BETA = import.meta.env.VITE_START_ASSIST_BETA !== "false";
 
 const formatDate = (value: string | null): string => {
   if (!value) return "日付不明";
@@ -221,6 +223,8 @@ export const App = () => {
   const [doLaterActive, setDoLaterActive] = useState<DoLaterItem[]>([]);
   const [doLaterResolved, setDoLaterResolved] = useState<DoLaterItem[]>([]);
   const [showDoLaterHistory, setShowDoLaterHistory] = useState(false);
+  const [setupItem, setSetupItem] = useState<DoLaterItem | null>(null);
+  const [focusItem, setFocusItem] = useState<DoLaterItem | null>(null);
   const [showTrash, setShowTrash] = useState(false);
   const [selected, setSelected] = useState<Memo | null>(null);
   const [selectedMemory, setSelectedMemory] = useState<RelatedMemory | null>(null);
@@ -514,6 +518,51 @@ export const App = () => {
     }
   };
 
+  const configureItem = async (item: DoLaterItem, configuration: {
+    first_step: string | null;
+    launch_url: string | null;
+    roulette_enabled: boolean;
+  }) => {
+    try {
+      await configureDoLater(item.memo_id, configuration);
+      await refreshDoLater();
+      setSetupItem(null);
+      setNotice("着手の設定を保存しました。");
+    } catch {
+      setNotice("着手の設定を保存できませんでした。元のメモは変わっていません。");
+    }
+  };
+
+  const openDoLater = (item: DoLaterItem) => {
+    if (!START_ASSIST_BETA) {
+      setSelected(item.memo);
+      return;
+    }
+    if (item.launch_url) {
+      const opened = window.open(item.launch_url, "_blank", "noopener,noreferrer");
+      if (opened) {
+        setNotice("始めました。");
+        return;
+      }
+    }
+    if (item.first_step || item.launch_url) {
+      setFocusItem(item);
+      return;
+    }
+    setSelected(item.memo);
+  };
+
+  const spinRoulette = () => {
+    const candidates = doLaterActive.filter((item) => item.roulette_enabled);
+    if (candidates.length === 0) {
+      setNotice("ルーレットに入れた言葉はまだありません。");
+      return;
+    }
+    const random = new Uint32Array(1);
+    crypto.getRandomValues(random);
+    openDoLater(candidates[random[0]! % candidates.length]!);
+  };
+
   const navTitle = useMemo(() => {
     if (tab === "do-later") return "あとでやる";
     if (tab === "search") return "言葉をさがす";
@@ -625,15 +674,28 @@ export const App = () => {
 
         {tab === "do-later" && (
           <section className="do-later-panel">
+            {START_ASSIST_BETA && (
+              <button className="roulette-button" type="button" onClick={spinRoulette}>
+                ルーレットを回す
+              </button>
+            )}
             <p className="do-later-intro">行動につながりそうな言葉を、ここでもう一度。</p>
             <div className="do-later-list">
               {doLaterActive.map((item) => (
                 <article className="do-later-card" key={item.memo_id}>
-                  <button className="do-later-main" onClick={() => setSelected(item.memo)}>
+                  <button className="do-later-main" onClick={() => openDoLater(item)}>
                     <time>{formatDate(item.memo.captured_at)}</time>
                     <strong>{item.memo.title}</strong>
+                    {START_ASSIST_BETA && item.first_step && (
+                      <em className="first-step-preview">まず、これだけ：{item.first_step}</em>
+                    )}
                     <span>{item.memo.current_text}</span>
                   </button>
+                  {START_ASSIST_BETA && (
+                    <button className="setup-start-button" type="button" onClick={() => setSetupItem(item)}>
+                      {item.first_step || item.launch_url ? "最初の一歩を編集" : "最初の一歩を置く"}
+                    </button>
+                  )}
                   <div className="do-later-actions">
                     <button onClick={() => void actOnDoLater(item.memo_id, "done")}>やってやった。</button>
                     <button onClick={() => void actOnDoLater(item.memo_id, "later")}>もう少しあとで。</button>
@@ -775,12 +837,72 @@ export const App = () => {
           }}
         />
       )}
+      {setupItem && (
+        <DoLaterSetupDialog
+          item={setupItem}
+          onClose={() => setSetupItem(null)}
+          onSave={(configuration) => void configureItem(setupItem, configuration)}
+        />
+      )}
+      {focusItem && (
+        <DoLaterFocusDialog
+          item={focusItem}
+          onClose={() => setFocusItem(null)}
+          onOpenMemo={() => { setFocusItem(null); setSelected(focusItem.memo); }}
+        />
+      )}
       {notice && (
         <button className="notice" onClick={() => setNotice("")}>{notice}</button>
       )}
     </div>
   );
 };
+
+const DoLaterSetupDialog = ({
+  item,
+  onClose,
+  onSave
+}: {
+  item: DoLaterItem;
+  onClose: () => void;
+  onSave: (configuration: { first_step: string | null; launch_url: string | null; roulette_enabled: boolean }) => void;
+}) => {
+  const [firstStep, setFirstStep] = useState(item.first_step ?? "");
+  const [launchUrl, setLaunchUrl] = useState(item.launch_url ?? "");
+  const [roulette, setRoulette] = useState(item.roulette_enabled);
+  return (
+    <div className="dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <article className="start-dialog" role="dialog" aria-modal="true">
+        <button className="close-button" onClick={onClose} aria-label="閉じる">×</button>
+        <h2>最初の一歩</h2>
+        <p className="dialog-help">この言葉から始めるなら、まず何をする？</p>
+        <textarea value={firstStep} onChange={(event) => setFirstStep(event.target.value)} placeholder="例：資料を開いて、見出しだけ読む" maxLength={500} />
+        <input value={launchUrl} onChange={(event) => setLaunchUrl(event.target.value)} placeholder="開くURL（任意）" inputMode="url" />
+        <label className="roulette-check"><input type="checkbox" checked={roulette} onChange={(event) => setRoulette(event.target.checked)} /> ルーレットに入れる</label>
+        <div className="dialog-actions">
+          <button className="text-button" onClick={onClose}>やめる</button>
+          <button className="primary-button" onClick={() => onSave({
+            first_step: firstStep || null,
+            launch_url: launchUrl || null,
+            roulette_enabled: roulette
+          })}>保存</button>
+        </div>
+      </article>
+    </div>
+  );
+};
+
+const DoLaterFocusDialog = ({ item, onClose, onOpenMemo }: { item: DoLaterItem; onClose: () => void; onOpenMemo: () => void }) => (
+  <div className="dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <article className="start-dialog focus-dialog" role="dialog" aria-modal="true">
+      <button className="close-button" onClick={onClose} aria-label="閉じる">×</button>
+      <p className="eyebrow">まず、これだけ。</p>
+      <h2>{item.first_step || item.memo.title}</h2>
+      {item.launch_url && <a className="primary-button start-link" href={item.launch_url} target="_blank" rel="noreferrer">開く</a>}
+      <button className="text-button" onClick={onOpenMemo}>元の言葉を見る</button>
+    </article>
+  </div>
+);
 
 const ReminderChooser = ({
   onSchedule,

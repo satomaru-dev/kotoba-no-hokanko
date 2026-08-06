@@ -87,4 +87,26 @@ describe("capture store", () => {
     await store.restore(id);
     expect(store.listDoLater("active").map((item) => item.memo_id)).toEqual([id]);
   });
+
+  it("keeps start assistance separate from the memo and preserves it on reactivation", async () => {
+    const { store } = await makeStore();
+    const id = "66666666-6666-4666-8666-666666666666";
+    const memo = await store.capture(id, "元の言葉は変更しない", "2026-08-01T00:00:00.000Z");
+    await store.addDoLater(id, "2026-08-01T01:00:00.000Z");
+    await store.configureDoLater(id, {
+      first_step: "まず見出しだけ読む",
+      launch_url: "https://example.com/start",
+      roulette_enabled: true
+    });
+    const configured = store.listDoLater("active")[0];
+    expect(configured?.first_step).toBe("まず見出しだけ読む");
+    expect(configured?.launch_url).toBe("https://example.com/start");
+    expect(configured?.roulette_enabled).toBe(true);
+    await store.updateDoLater(id, "done", "2026-08-01T02:00:00.000Z");
+    await store.addDoLater(id, "2026-08-01T03:00:00.000Z");
+    const reactivated = store.listDoLater("active")[0];
+    expect(reactivated?.first_step).toBe("まず見出しだけ読む");
+    expect(reactivated?.roulette_enabled).toBe(true);
+    expect(store.get(id)).toEqual(memo);
+  });
 });

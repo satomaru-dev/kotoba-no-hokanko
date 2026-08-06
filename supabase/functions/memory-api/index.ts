@@ -342,10 +342,22 @@ const loadDoLaterItems = async (
   if (memoError) throw memoError;
   const memos = new Map((await decryptMemos(admin, ownerId, memoRows ?? []))
     .map((memo) => [memo.id, memo]));
-  return (items ?? []).flatMap((item) => {
+  const enriched = await Promise.all((items ?? []).map(async (item) => {
     const memo = memos.get(item.memo_id);
-    return memo ? [{ ...item, memo }] : [];
-  });
+    if (!memo) return null;
+    return {
+      memo_id: item.memo_id,
+      status: item.status,
+      activated_at: item.activated_at,
+      updated_at: item.updated_at,
+      resolved_at: item.resolved_at,
+      first_step: item.first_step_ciphertext ? await decrypt(item.first_step_ciphertext) : null,
+      launch_url: item.launch_url_ciphertext ? await decrypt(item.launch_url_ciphertext) : null,
+      roulette_enabled: Boolean(item.roulette_enabled),
+      memo
+    };
+  }));
+  return enriched.filter((item) => item !== null);
 };
 
 const loadDoLaterItem = async (admin: AdminClient, ownerId: string, memoId: string) => {
@@ -803,15 +815,19 @@ Deno.serve(async (request) => {
       if (!memo) return json({ error: "not_found" }, 404);
       const now = new Date().toISOString();
       if (request.method === "POST") {
-        const { error } = await admin.from("memo_later_items").upsert({
-          memo_id: memoId,
-          owner_id: ownerId,
-          status: "active",
-          activated_at: now,
-          updated_at: now,
-          resolved_at: null
-        }, { onConflict: "memo_id" });
-        if (error) throw error;
+        const { data: current, error: currentError } = await admin.from("memo_later_items")
+          .select("memo_id").eq("memo_id", memoId).eq("owner_id", ownerId).maybeSingle();
+        if (currentError) throw currentError;
+        const result = current
+          ? await admin.from("memo_later_items").update({
+              status: "active", activated_at: now, updated_at: now, resolved_at: null
+            }).eq("memo_id", memoId).eq("owner_id", ownerId)
+          : await admin.from("memo_later_items").insert({
+              memo_id: memoId, owner_id: ownerId, status: "active",
+              activated_at: now, updated_at: now, resolved_at: null,
+              roulette_enabled: false
+            });
+        if (result.error) throw result.error;
         return json({ item: await loadDoLaterItem(admin, ownerId, memoId) }, 201);
       }
       if (request.method === "PATCH") {
@@ -820,6 +836,26 @@ Deno.serve(async (request) => {
         if (currentError) throw currentError;
         if (!current) return json({ error: "not_found" }, 404);
         const body = await request.json();
+        if (body.configuration !== undefined) {
+          const configuration = body.configuration as Record<string, unknown>;
+          const firstStep = configuration.first_step == null ? null : String(configuration.first_step);
+          const launchUrl = configuration.launch_url == null ? null : String(configuration.launch_url);
+          const rouletteEnabled = Boolean(configuration.roulette_enabled);
+          if (firstStep && firstStep.length > 500) return json({ error: "invalid_request" }, 400);
+          if (launchUrl) {
+            let parsedUrl: URL;
+            try { parsedUrl = new URL(launchUrl); } catch { return json({ error: "invalid_request" }, 400); }
+            if (!/^https?:$/.test(parsedUrl.protocol)) return json({ error: "invalid_request" }, 400);
+          }
+          const { error } = await admin.from("memo_later_items").update({
+            first_step_ciphertext: firstStep ? await encrypt(firstStep) : null,
+            launch_url_ciphertext: launchUrl ? await encrypt(launchUrl) : null,
+            roulette_enabled: rouletteEnabled,
+            updated_at: now
+          }).eq("memo_id", memoId).eq("owner_id", ownerId);
+          if (error) throw error;
+          return json({ item: await loadDoLaterItem(admin, ownerId, memoId) });
+        }
         const action = String(body.action ?? "");
         if (!["done", "later", "abandon"].includes(action)) {
           return json({ error: "invalid_request" }, 400);
