@@ -259,7 +259,7 @@ button:disabled { cursor: default; }
 .do-later-actions { display: flex; align-items: center; gap: 4px; padding: 0 15px 12px; border-top: 0; }
 .do-later-actions button { min-height: 38px; padding: 7px 10px; border: 0; background: transparent; color: var(--muted); font-size: 12px; }
 .do-later-actions .do-later-done { border-radius: 12px; background: var(--primary-bg); color: var(--primary-text); font-weight: 700; }
-.do-later-actions .do-later-later { margin-left: auto; }
+.do-later-actions .do-later-later { margin-left: 0; }
 .do-later-history { border-top: 0; }
 .do-later-history-list { border-top: 0; }
 .memo-list { display: grid; gap: 9px; }

@@ -898,9 +898,9 @@ export const App = () => {
                     </div>
                   )}
                   <div className="do-later-actions">
-                    <button className="do-later-done" onClick={() => void actOnDoLater(item.memo_id, "done")}>やってやった。</button>
-                    <button className="do-later-abandon" onClick={() => void actOnDoLater(item.memo_id, "abandon")}>やめる</button>
-                    <button className="do-later-later" onClick={() => void actOnDoLater(item.memo_id, "later")}>あとで</button>
+                    <button className="do-later-done" onClick={() => void actOnDoLater(item.memo_id, "done")}>やってあげた。</button>
+                    <button className="do-later-abandon" onClick={() => void actOnDoLater(item.memo_id, "abandon")}>やっぱりやめる</button>
+                    <button className="do-later-later" onClick={() => void actOnDoLater(item.memo_id, "later")}>まだやらない</button>
                   </div>
                 </article>
               ))}
@@ -921,7 +921,7 @@ export const App = () => {
                   {doLaterResolved.map((item) => (
                     <button key={item.memo_id} onClick={() => setSelected(item.memo)}>
                       <span className={`do-later-result ${item.status}`}>
-                        {item.status === "done" ? "やってやった。" : "やっぱりやめる。"}
+                        {item.status === "done" ? "やってあげた。" : "やっぱりやめる。"}
                       </span>
                       <strong>{item.memo.current_text}</strong>
                       <time>{formatRelativeDate(item.resolved_at)}</time>
@@ -1161,7 +1161,7 @@ const DoLaterSetupDialog = ({
         <input value={launchUrl} onChange={(event) => setLaunchUrl(event.target.value)} placeholder="開くURL（任意）" inputMode="url" />
         <label className="roulette-check"><input type="checkbox" checked={roulette} onChange={(event) => setRoulette(event.target.checked)} /> ルーレットに入れる</label>
         <div className="dialog-actions">
-          <button className="text-button" onClick={onClose}>やめる</button>
+          <button className="text-button" onClick={onClose}>やっぱりやめる</button>
           <button className="primary-button" onClick={() => onSave({
             first_step: firstStep || null,
             launch_url: launchUrl || null,
@@ -1389,7 +1389,7 @@ const MemoDialog = ({
             </button>
           ) : editing ? (
             <>
-              <button className="text-button" onClick={() => setEditing(false)}>やめる</button>
+              <button className="text-button" onClick={() => setEditing(false)}>やっぱりやめる</button>
               <button className="primary-button" disabled={busy || !text.trim()} onClick={() => void save()}>
                 変更を残す
               </button>
