@@ -331,7 +331,6 @@ const loadDoLaterItems = async (
   let query = admin.from("memo_later_items").select("*").eq("owner_id", ownerId);
   query = view === "active"
     ? query.eq("status", "active")
-      .order("deferred_at", { ascending: true, nullsFirst: true })
       .order("activated_at", { ascending: false })
     : query.in("status", ["done", "abandoned"]).order("resolved_at", { ascending: false });
   const { data: items, error } = await query.limit(100);

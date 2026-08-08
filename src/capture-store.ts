@@ -211,10 +211,6 @@ export class CaptureStore {
       .filter((item) => item.memo && !item.memo.deleted_at)
       .sort((left, right) => {
         if (view === "active") {
-          const leftDeferred = left.deferred_at !== null;
-          const rightDeferred = right.deferred_at !== null;
-          if (leftDeferred !== rightDeferred) return leftDeferred ? 1 : -1;
-          if (leftDeferred && rightDeferred) return left.deferred_at!.localeCompare(right.deferred_at!);
           return right.activated_at.localeCompare(left.activated_at);
         }
         const leftDate = left.resolved_at ?? left.updated_at;

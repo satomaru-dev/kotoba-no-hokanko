@@ -602,7 +602,7 @@ export const App = () => {
     try {
       await updateDoLater(memoId, action);
       await refreshDoLater();
-      if (action === "later") setNotice("一覧の末尾へ移しました。");
+      if (action === "later") setNotice("一覧の先頭へ移しました。");
     } catch {
       setNotice("今は変更できませんでした。元のメモは変わっていません。");
     }
