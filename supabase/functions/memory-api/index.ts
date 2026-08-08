@@ -331,12 +331,19 @@ const loadDoLaterItems = async (
   let query = admin.from("memo_later_items").select("*").eq("owner_id", ownerId);
   query = view === "active"
     ? query.eq("status", "active")
-      .order("deferred_at", { ascending: true, nullsFirst: true })
-      .order("activated_at", { ascending: false })
+
     : query.in("status", ["done", "abandoned"]).order("resolved_at", { ascending: false });
-  const { data: items, error } = await query.limit(100);
+  const { data: rawItems, error } = await query.limit(100);
   if (error) throw error;
-  const memoIds = (items ?? []).map((item) => item.memo_id);
+  const items = [...(rawItems ?? [])].sort((left, right) => {
+    if (view !== "active") return (right.resolved_at ?? right.updated_at).localeCompare(left.resolved_at ?? left.updated_at);
+    const leftDeferred = left.deferred_at !== null;
+    const rightDeferred = right.deferred_at !== null;
+    if (leftDeferred !== rightDeferred) return leftDeferred ? 1 : -1;
+    if (leftDeferred && rightDeferred) return (left.deferred_at ?? "").localeCompare(right.deferred_at ?? "");
+    return right.activated_at.localeCompare(left.activated_at);
+  });
+  const memoIds = items.map((item) => item.memo_id);
   const { data: memoRows, error: memoError } = memoIds.length === 0
     ? { data: [], error: null }
     : await admin.from("captured_memos").select("*")
@@ -344,7 +351,7 @@ const loadDoLaterItems = async (
   if (memoError) throw memoError;
   const memos = new Map((await decryptMemos(admin, ownerId, memoRows ?? []))
     .map((memo) => [memo.id, memo]));
-  const enriched = await Promise.all((items ?? []).map(async (item) => {
+  const enriched = await Promise.all(items.map(async (item) => {
     const memo = memos.get(item.memo_id);
     if (!memo) return null;
     return {
