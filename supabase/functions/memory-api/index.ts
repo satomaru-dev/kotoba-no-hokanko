@@ -335,14 +335,11 @@ const loadDoLaterItems = async (
     : query.in("status", ["done", "abandoned"]).order("resolved_at", { ascending: false });
   const { data: rawItems, error } = await query.limit(100);
   if (error) throw error;
-  const items = [...(rawItems ?? [])].sort((left, right) => {
-    if (view !== "active") return (right.resolved_at ?? right.updated_at).localeCompare(left.resolved_at ?? left.updated_at);
-    const leftDeferred = left.deferred_at !== null;
-    const rightDeferred = right.deferred_at !== null;
-    if (leftDeferred !== rightDeferred) return leftDeferred ? 1 : -1;
-    if (leftDeferred && rightDeferred) return (left.deferred_at ?? "").localeCompare(right.deferred_at ?? "");
-    return right.activated_at.localeCompare(left.activated_at);
-  });
+  const items = [...(rawItems ?? [])].sort((left, right) =>
+    view === "active"
+      ? right.activated_at.localeCompare(left.activated_at)
+      : (right.resolved_at ?? right.updated_at).localeCompare(left.resolved_at ?? left.updated_at)
+  );
   const memoIds = items.map((item) => item.memo_id);
   const { data: memoRows, error: memoError } = memoIds.length === 0
     ? { data: [], error: null }
@@ -936,7 +933,7 @@ if (route === "/search" && request.method === "POST") {
         const status = action === "done" ? "done" : action === "abandon" ? "abandoned" : "active";
         const updates = {
           status,
-          activated_at: current.activated_at,
+          activated_at: action === "later" ? now : current.activated_at,
           deferred_at: action === "later" ? now : current.deferred_at,
           updated_at: now,
           resolved_at: status === "active" ? null : now
