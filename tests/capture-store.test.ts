@@ -110,7 +110,7 @@ describe("capture store", () => {
     expect(store.get(id)).toEqual(memo);
   });
 
-  it("moves a deferred active item to the top without changing new items", async () => {
+  it("moves a deferred active item to the bottom without changing new items", async () => {
     const { store } = await makeStore();
     const firstId = "77777777-7777-4777-8777-777777777777";
     const secondId = "88888888-8888-4888-8888-888888888888";
@@ -119,7 +119,7 @@ describe("capture store", () => {
     await store.addDoLater(firstId, "2026-08-01T02:00:00.000Z");
     await store.addDoLater(secondId, "2026-08-01T03:00:00.000Z");
     await store.updateDoLater(secondId, "later", "2026-08-01T04:00:00.000Z");
-    expect(store.listDoLater("active").map((item) => item.memo_id)).toEqual([secondId, firstId]);
+    expect(store.listDoLater("active").map((item) => item.memo_id)).toEqual([firstId, secondId]);
   });
 
   it("records normalized search insights without changing memo data", async () => {
