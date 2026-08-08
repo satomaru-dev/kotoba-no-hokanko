@@ -27,6 +27,7 @@ export interface DoLaterItem {
   memo_id: string;
   status: DoLaterStatus;
   activated_at: string;
+  deferred_at: string | null;
   updated_at: string;
   resolved_at: string | null;
   first_step: string | null;
@@ -39,6 +40,7 @@ interface StoredDoLaterItem {
   memo_id: string;
   status: DoLaterStatus;
   activated_at: string;
+  deferred_at: string | null;
   updated_at: string;
   resolved_at: string | null;
   first_step: string | null;
@@ -78,6 +80,7 @@ export class CaptureStore {
       const doLater = Array.isArray(parsed) ? [] : (parsed.do_later ?? []);
       this.memos = new Map(memos.map((memo) => [memo.id, memo]));
       this.doLater = new Map(doLater.map((item) => [item.memo_id, {
+        deferred_at: null,
         first_step: null,
         launch_url: null,
         roulette_enabled: false,
@@ -191,8 +194,15 @@ export class CaptureStore {
       .map((item) => ({ ...item, memo: this.memos.get(item.memo_id)! }))
       .filter((item) => item.memo && !item.memo.deleted_at)
       .sort((left, right) => {
-        const leftDate = view === "active" ? left.activated_at : left.resolved_at ?? left.updated_at;
-        const rightDate = view === "active" ? right.activated_at : right.resolved_at ?? right.updated_at;
+        if (view === "active") {
+          const leftDeferred = left.deferred_at !== null;
+          const rightDeferred = right.deferred_at !== null;
+          if (leftDeferred !== rightDeferred) return leftDeferred ? 1 : -1;
+          if (leftDeferred && rightDeferred) return left.deferred_at!.localeCompare(right.deferred_at!);
+          return right.activated_at.localeCompare(left.activated_at);
+        }
+        const leftDate = left.resolved_at ?? left.updated_at;
+        const rightDate = right.resolved_at ?? right.updated_at;
         return rightDate.localeCompare(leftDate);
       });
   }
@@ -203,6 +213,7 @@ export class CaptureStore {
     const previous = this.doLater.get(id);
     const item: StoredDoLaterItem = {
       ...(previous ?? {
+        deferred_at: null,
         first_step: null,
         launch_url: null,
         roulette_enabled: false
@@ -210,6 +221,7 @@ export class CaptureStore {
       memo_id: id,
       status: "active",
       activated_at: now,
+      deferred_at: null,
       updated_at: now,
       resolved_at: null
     };
@@ -235,6 +247,7 @@ export class CaptureStore {
       ...current,
       status,
       activated_at: action === "later" ? now : current.activated_at,
+      deferred_at: action === "later" ? now : current.deferred_at,
       updated_at: now,
       resolved_at: status === "active" ? null : now
     };

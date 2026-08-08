@@ -93,6 +93,7 @@ export interface DoLaterItem {
   memo_id: string;
   status: DoLaterStatus;
   activated_at: string;
+  deferred_at: string | null;
   updated_at: string;
   resolved_at: string | null;
   first_step: string | null;
@@ -106,3 +107,13 @@ export interface DoLaterConfiguration {
   launch_url: string | null;
   roulette_enabled: boolean;
 }
+
+export interface WorkspaceSummary {
+  workspace_id: string;
+  memo_id: string;
+  label: string;
+  exists: boolean;
+  last_verified_at: string;
+}
+
+export type WorkspaceOperationStatus = "success" | "cancelled" | "helper_unavailable" | "picker_error" | "timeout" | "folder_not_found";

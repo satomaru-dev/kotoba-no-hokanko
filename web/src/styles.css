@@ -121,6 +121,15 @@ button:disabled { cursor: default; }
 .do-later-actions { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid #e8e0d4; }
 .do-later-actions button { min-height: 48px; padding: 8px 5px; border: 0; border-right: 1px solid #e8e0d4; background: #fffaf1; color: var(--accent-dark); font-size: 11px; font-weight: 700; line-height: 1.35; }
 .do-later-actions button:last-child { border-right: 0; color: var(--muted); }
+.workspace-actions { padding: 0 14px 12px; }
+.workspace-open-button, .workspace-dialog-button { width: 100%; padding: 11px 12px; border: 1px solid #d7c5ad; border-radius: 3px 10px 3px 3px; background: #fff8ea; color: var(--accent-dark); font-weight: 700; }
+.workspace-dialog-button + .workspace-dialog-button { margin-top: 10px; }
+.workspace-missing { color: #a14b38; font-size: 13px; }
+.workspace-dialog .text-button { width: 100%; margin-top: 14px; }
+.workspace-path-fallback { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.workspace-path-fallback label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 12px; }
+.workspace-path-fallback input { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid var(--line); border-radius: 4px; background: #fffdf8; }
+.workspace-path-fallback .workspace-dialog-button { margin-top: 8px; }
 .do-later-history { margin-top: 28px; border-top: 1px solid var(--line); }
 .do-later-history-toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 18px 2px; border: 0; background: none; font-weight: 700; }
 .do-later-history-list { display: grid; border-top: 1px solid var(--line); }

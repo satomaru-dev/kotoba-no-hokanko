@@ -10,7 +10,9 @@ import type {
   Memo,
   RelatedMemory,
   Reminder,
-  ReminderInput
+  ReminderInput,
+  WorkspaceOperationStatus,
+  WorkspaceSummary
 } from "./types";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
@@ -184,4 +186,62 @@ export const configureDoLater = async (
     body: JSON.stringify({ configuration })
   });
   return result.item;
+};
+
+const localOnly = (): void => {
+  if (cloudMode) throw new Error("workspace_feature_is_local_only");
+};
+
+export const getWorkspace = async (memoId: string): Promise<WorkspaceSummary | null> => {
+  localOnly();
+  const result = await request<{ workspace: WorkspaceSummary | null }>(`/memos/${memoId}/workspace`);
+  return result.workspace;
+};
+
+export const createOrChooseWorkspace = async (
+  memoId: string,
+  mode: "choose" | "create",
+  label?: string
+): Promise<{ status: WorkspaceOperationStatus; workspace: WorkspaceSummary | null }> => {
+  localOnly();
+  const result = await request<{ status: WorkspaceOperationStatus; workspace: WorkspaceSummary | null }>(`/memos/${memoId}/workspace`, {
+    method: "POST",
+    body: JSON.stringify({ mode, label })
+  });
+  return result;
+};
+
+export const createWorkspaceFromPath = async (
+  memoId: string,
+  mode: "choose" | "create",
+  path: string,
+  label?: string
+): Promise<{ status: WorkspaceOperationStatus; workspace: WorkspaceSummary | null }> => {
+  localOnly();
+  return request(`/memos/${memoId}/workspace/path`, {
+    method: "POST",
+    body: JSON.stringify({ mode, path, label })
+  });
+};
+
+export const addWorkspaceFiles = async (memoId: string): Promise<{ status: WorkspaceOperationStatus; copied: string[]; skipped: string[] }> => {
+  localOnly();
+  return request(`/memos/${memoId}/workspace/files`, { method: "POST" });
+};
+
+export const openWorkspace = async (memoId: string): Promise<{ status: WorkspaceOperationStatus; workspace: WorkspaceSummary | null }> => {
+  localOnly();
+  const result = await request<{ status: WorkspaceOperationStatus; workspace: WorkspaceSummary | null }>(`/memos/${memoId}/workspace/open`, { method: "POST" });
+  return result;
+};
+
+export const workspaceHelperHealth = async (): Promise<WorkspaceOperationStatus> => {
+  localOnly();
+  const result = await request<{ status: WorkspaceOperationStatus }>("/workspace-helper/health");
+  return result.status;
+};
+
+export const unlinkWorkspace = (memoId: string): Promise<void> => {
+  localOnly();
+  return request(`/memos/${memoId}/workspace`, { method: "DELETE" });
 };

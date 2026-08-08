@@ -109,4 +109,16 @@ describe("capture store", () => {
     expect(reactivated?.roulette_enabled).toBe(true);
     expect(store.get(id)).toEqual(memo);
   });
+
+  it("moves deferred active items to the bottom without changing new items", async () => {
+    const { store } = await makeStore();
+    const firstId = "77777777-7777-4777-8777-777777777777";
+    const secondId = "88888888-8888-4888-8888-888888888888";
+    await store.capture(firstId, "first", "2026-08-01T00:00:00.000Z");
+    await store.capture(secondId, "second", "2026-08-01T01:00:00.000Z");
+    await store.addDoLater(firstId, "2026-08-01T02:00:00.000Z");
+    await store.addDoLater(secondId, "2026-08-01T03:00:00.000Z");
+    await store.updateDoLater(secondId, "later", "2026-08-01T04:00:00.000Z");
+    expect(store.listDoLater("active").map((item) => item.memo_id)).toEqual([firstId, secondId]);
+  });
 });

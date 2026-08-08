@@ -9,6 +9,7 @@ import { CaptureStore } from "./capture-store.js";
 import { createMemoryMcpServer } from "./mcp.js";
 import { createRuntime } from "./runtime.js";
 import { assertAuthorized } from "./security.js";
+import { WorkspaceStore } from "./workspaces.js";
 
 const runtime = await createRuntime();
 if (process.env.NODE_ENV === "production" && !runtime.config.apiToken) {
@@ -17,6 +18,8 @@ if (process.env.NODE_ENV === "production" && !runtime.config.apiToken) {
 
 const captures = new CaptureStore(runtime.config.captureFilePath, runtime);
 await captures.initialize();
+const workspaces = new WorkspaceStore(path.join(path.dirname(runtime.config.captureFilePath), "workspaces.json"));
+await workspaces.initialize();
 const app = createMcpExpressApp();
 app.use(express.json({ limit: "256kb" }));
 
@@ -161,6 +164,81 @@ app.patch("/api/memos/:id/do-later", async (request: Request, response: Response
       return;
     }
     response.json({ item });
+  } catch (error) {
+    next(error);
+  }
+});
+
+const workspaceId = (request: Request): string => String(request.params.id ?? "");
+
+app.get("/api/memos/:id/workspace", async (request: Request, response: Response, next: NextFunction) => {
+  try {
+    response.json({ workspace: await workspaces.get(workspaceId(request)) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/memos/:id/workspace", async (request: Request, response: Response, next: NextFunction) => {
+  try {
+    const input = z.object({
+      mode: z.enum(["choose", "create"]),
+      label: z.string().trim().max(80).optional()
+    }).parse(request.body);
+    const result = await workspaces.createOrChoose(workspaceId(request), input.mode, input.label);
+    response.status(result.status === "success" ? 201 : 200).json({ status: result.status, workspace: result.value });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/memos/:id/workspace/path", async (request: Request, response: Response, next: NextFunction) => {
+  try {
+    const input = z.object({
+      mode: z.enum(["choose", "create"]),
+      path: z.string().trim().min(1).max(1000),
+      label: z.string().trim().max(80).optional()
+    }).parse(request.body);
+    const result = await workspaces.createFromPath(workspaceId(request), input.mode, input.path, input.label);
+    response.status(result.status === "success" ? 201 : 200).json({ status: result.status, workspace: result.value });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/memos/:id/workspace/files", async (request: Request, response: Response, next: NextFunction) => {
+  try {
+    const result = await workspaces.addFiles(workspaceId(request));
+    response.json({ status: result.status, ...result.value });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/memos/:id/workspace/open", async (request: Request, response: Response, next: NextFunction) => {
+  try {
+    const result = await workspaces.open(workspaceId(request));
+    response.json({ status: result.status, workspace: result.value });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/workspace-helper/health", async (_request: Request, response: Response, next: NextFunction) => {
+  try {
+    response.json({ status: await workspaces.helperHealth() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/memos/:id/workspace", async (request: Request, response: Response, next: NextFunction) => {
+  try {
+    if (!await workspaces.unlink(workspaceId(request))) {
+      response.status(404).json({ error: "workspace_not_found" });
+      return;
+    }
+    response.status(204).end();
   } catch (error) {
     next(error);
   }

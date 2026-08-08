@@ -10,18 +10,24 @@ import {
   configureDoLater,
   createIdeaThread,
   createReminder,
+  createOrChooseWorkspace,
+  createWorkspaceFromPath,
+  addWorkspaceFiles,
+  getWorkspace,
   getIdeaThread,
   getPushPublicKey,
   listDueReminders,
   listDoLater,
   listMemos,
   markReminderOpened,
+  openWorkspace,
   restoreMemo,
   saveFeedback,
   savePushSubscription,
   searchMemories,
   supabase,
   trashMemo,
+  unlinkWorkspace,
   updateDoLater,
   updateMemo
 } from "./api";
@@ -43,7 +49,9 @@ import type {
   Memo,
   RelatedMemory,
   Reminder,
-  ReminderInput
+  ReminderInput,
+  WorkspaceOperationStatus,
+  WorkspaceSummary
 } from "./types";
 
 type Tab = "write" | "do-later" | "search" | "recent";
@@ -254,6 +262,8 @@ export const App = () => {
   const [doLaterResolved, setDoLaterResolved] = useState<DoLaterItem[]>([]);
   const [showDoLaterHistory, setShowDoLaterHistory] = useState(false);
   const [setupItem, setSetupItem] = useState<DoLaterItem | null>(null);
+  const [workspaceItem, setWorkspaceItem] = useState<DoLaterItem | null>(null);
+  const [workspaces, setWorkspaces] = useState<Record<string, WorkspaceSummary | null>>({});
   const [focusItem, setFocusItem] = useState<DoLaterItem | null>(null);
   const [showTrash, setShowTrash] = useState(false);
   const [selected, setSelected] = useState<Memo | null>(null);
@@ -406,6 +416,11 @@ export const App = () => {
       ]);
       setDoLaterActive(active);
       setDoLaterResolved(resolved);
+      if (!cloudMode) {
+        const all = [...active, ...resolved];
+        const entries = await Promise.all(all.map(async (item) => [item.memo_id, await getWorkspace(item.memo_id)] as const));
+        setWorkspaces(Object.fromEntries(entries));
+      }
     } catch {
       setNotice("「あとでやる」を読み込めませんでした。メモは消えていません。");
     }
@@ -590,7 +605,7 @@ export const App = () => {
     try {
       await updateDoLater(memoId, action);
       await refreshDoLater();
-      if (action === "later") setNotice("一覧の先頭へ戻しました。");
+      if (action === "later") setNotice("一覧の末尾へ移しました。");
     } catch {
       setNotice("今は変更できませんでした。元のメモは変わっていません。");
     }
@@ -608,6 +623,92 @@ export const App = () => {
       setNotice("着手の設定を保存しました。");
     } catch {
       setNotice("着手の設定を保存できませんでした。元のメモは変わっていません。");
+    }
+  };
+
+  const refreshWorkspace = async (memoId: string) => {
+    if (cloudMode) return null;
+    const workspace = await getWorkspace(memoId);
+    setWorkspaces((current) => ({ ...current, [memoId]: workspace }));
+    return workspace;
+  };
+
+  const chooseWorkspace = async (item: DoLaterItem, mode: "choose" | "create", label?: string) => {
+    try {
+      const result = await createOrChooseWorkspace(item.memo_id, mode, label);
+      if (result.workspace) {
+        setWorkspaces((current) => ({ ...current, [item.memo_id]: result.workspace }));
+        setNotice("作業フォルダを用意しました。");
+      } else if (result.status === "cancelled") {
+        setNotice("フォルダの選択を取り消しました。");
+      } else {
+        setNotice(workspaceStatusMessage(result.status));
+      }
+    } catch {
+      setNotice("作業フォルダを用意できませんでした。");
+    }
+  };
+
+  const chooseWorkspaceFromPath = async (item: DoLaterItem, mode: "choose" | "create", inputPath: string, label?: string) => {
+    try {
+      const result = await createWorkspaceFromPath(item.memo_id, mode, inputPath, label);
+      if (result.workspace) {
+        setWorkspaces((current) => ({ ...current, [item.memo_id]: result.workspace }));
+        setNotice("作業フォルダを用意しました。");
+      } else {
+        setNotice(workspaceStatusMessage(result.status));
+      }
+    } catch {
+      setNotice("入力したパスを確認できませんでした。");
+    }
+  };
+
+  const addFilesToWorkspace = async (item: DoLaterItem) => {
+    try {
+      const result = await addWorkspaceFiles(item.memo_id);
+      if (result.status !== "success") setNotice(workspaceStatusMessage(result.status));
+      else if (result.copied.length > 0) setNotice(`${result.copied.length}個のファイルを追加しました。`);
+      else setNotice("追加するファイルはありませんでした。");
+      await refreshWorkspace(item.memo_id);
+    } catch {
+      setNotice("ファイルを追加できませんでした。");
+    }
+  };
+
+  const startWorkspace = async (item: DoLaterItem) => {
+    try {
+      const result = await openWorkspace(item.memo_id);
+      const workspace = result.workspace;
+      if (workspace) setWorkspaces((current) => ({ ...current, [item.memo_id]: workspace }));
+      if (result.status !== "success" || !workspace?.exists) {
+        setNotice(workspaceStatusMessage(result.status));
+        setWorkspaceItem(item);
+        return;
+      }
+      setWorkspaceItem(null);
+      setFocusItem(item);
+    } catch {
+      const workspace = await refreshWorkspace(item.memo_id);
+      setNotice(workspace ? "作業フォルダを開けませんでした。" : "作業フォルダが見つかりません。再指定してください。");
+      if (workspace) setWorkspaceItem(item);
+    }
+  };
+
+  const workspaceStatusMessage = (status: WorkspaceOperationStatus): string => {
+    if (status === "cancelled") return "フォルダの選択を取り消しました。";
+    if (status === "helper_unavailable") return "PCヘルパーを起動できませんでした。パスを入力して指定してください。";
+    if (status === "timeout") return "選択画面から応答がありませんでした。もう一度試してください。";
+    if (status === "folder_not_found") return "作業フォルダが見つかりません。再指定してください。";
+    return "フォルダ選択を開けませんでした。パスを入力して指定することもできます。";
+  };
+
+  const detachWorkspace = async (item: DoLaterItem) => {
+    try {
+      await unlinkWorkspace(item.memo_id);
+      setWorkspaces((current) => ({ ...current, [item.memo_id]: null }));
+      setNotice("作業フォルダとの紐づけを外しました。フォルダ自体は削除していません。");
+    } catch {
+      setNotice("作業フォルダとの紐づけを外せませんでした。");
     }
   };
 
@@ -791,6 +892,19 @@ export const App = () => {
                       {item.first_step || item.launch_url ? "最初の一歩を編集" : "最初の一歩を置く"}
                     </button>
                   )}
+                  {!cloudMode && (
+                    <div className="workspace-actions">
+                      {workspaces[item.memo_id]?.exists ? (
+                        <button className="workspace-open-button" type="button" onClick={() => void startWorkspace(item)}>
+                          開いて始める：{workspaces[item.memo_id]?.label}
+                        </button>
+                      ) : (
+                        <button className="workspace-open-button" type="button" onClick={() => setWorkspaceItem(item)}>
+                          {workspaces[item.memo_id] ? "作業フォルダを再指定" : "作業フォルダを用意"}
+                        </button>
+                      )}
+                    </div>
+                  )}
                   <div className="do-later-actions">
                     <button onClick={() => void actOnDoLater(item.memo_id, "done")}>やってやった。</button>
                     <button onClick={() => void actOnDoLater(item.memo_id, "later")}>もう少しあとで。</button>
@@ -939,6 +1053,18 @@ export const App = () => {
           onSave={(configuration) => void configureItem(setupItem, configuration)}
         />
       )}
+      {workspaceItem && !cloudMode && (
+        <WorkspaceDialog
+          item={workspaceItem}
+          workspace={workspaces[workspaceItem.memo_id] ?? null}
+          onClose={() => setWorkspaceItem(null)}
+          onChoose={(mode, label) => void chooseWorkspace(workspaceItem, mode, label)}
+          onPath={(mode, path, label) => void chooseWorkspaceFromPath(workspaceItem, mode, path, label)}
+          onAddFiles={() => void addFilesToWorkspace(workspaceItem)}
+          onOpen={() => void startWorkspace(workspaceItem)}
+          onDetach={() => void detachWorkspace(workspaceItem)}
+        />
+      )}
       {focusItem && (
         <DoLaterFocusDialog
           item={focusItem}
@@ -949,6 +1075,61 @@ export const App = () => {
       {notice && (
         <button className="notice" onClick={() => setNotice("")}>{notice}</button>
       )}
+    </div>
+  );
+};
+
+const WorkspaceDialog = ({
+  item,
+  workspace,
+  onClose,
+  onChoose,
+  onPath,
+  onAddFiles,
+  onOpen,
+  onDetach
+}: {
+  item: DoLaterItem;
+  workspace: WorkspaceSummary | null;
+  onClose: () => void;
+  onChoose: (mode: "choose" | "create", label?: string) => void;
+  onPath: (mode: "choose" | "create", path: string, label?: string) => void;
+  onAddFiles: () => void;
+  onOpen: () => void;
+  onDetach: () => void;
+}) => {
+  const [manualPath, setManualPath] = useState("");
+  const chooseNew = () => {
+    const label = window.prompt("作業フォルダの名前", item.memo.title);
+    if (label === null) return;
+    onChoose("create", label);
+  };
+  return (
+    <div className="dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <article className="start-dialog workspace-dialog" role="dialog" aria-modal="true">
+        <button className="close-button" onClick={onClose} aria-label="閉じる">×</button>
+        <p className="eyebrow">この作業に必要なもの</p>
+        <h2>{workspace?.label ?? "作業フォルダ"}</h2>
+        {!workspace ? (
+          <>
+            <p className="dialog-help">資料をまとめておく場所を選ぶか、新しく作ります。</p>
+            <button className="workspace-dialog-button" onClick={() => onChoose("choose")}>既存フォルダを選ぶ</button>
+            <button className="workspace-dialog-button" onClick={chooseNew}>新しい作業フォルダを作る</button>
+            <div className="workspace-path-fallback">
+              <label htmlFor="workspace-path">フォルダのパスを入力</label>
+              <input id="workspace-path" value={manualPath} onChange={(event) => setManualPath(event.target.value)} placeholder="C:\\Users\\あなた\\Desktop\\作業" />
+              <button className="workspace-dialog-button" disabled={!manualPath.trim()} onClick={() => onPath("choose", manualPath)}>このパスを使う</button>
+            </div>
+          </>
+        ) : (
+          <>
+            {!workspace.exists && <p className="workspace-missing">作業フォルダが見つかりません。</p>}
+            <button className="workspace-dialog-button" onClick={workspace.exists ? onAddFiles : () => onChoose("choose")}>必要なファイルを追加</button>
+            {workspace.exists && <button className="workspace-dialog-button primary-button" onClick={onOpen}>開いて始める</button>}
+            <button className="text-button" onClick={onDetach}>紐づけを外す（フォルダは削除しない）</button>
+          </>
+        )}
+      </article>
     </div>
   );
 };

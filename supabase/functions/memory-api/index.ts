@@ -330,7 +330,9 @@ const loadDoLaterItems = async (
 ) => {
   let query = admin.from("memo_later_items").select("*").eq("owner_id", ownerId);
   query = view === "active"
-    ? query.eq("status", "active").order("activated_at", { ascending: false })
+    ? query.eq("status", "active")
+      .order("deferred_at", { ascending: true, nullsFirst: true })
+      .order("activated_at", { ascending: false })
     : query.in("status", ["done", "abandoned"]).order("resolved_at", { ascending: false });
   const { data: items, error } = await query.limit(100);
   if (error) throw error;
@@ -349,6 +351,7 @@ const loadDoLaterItems = async (
       memo_id: item.memo_id,
       status: item.status,
       activated_at: item.activated_at,
+      deferred_at: item.deferred_at ?? null,
       updated_at: item.updated_at,
       resolved_at: item.resolved_at,
       first_step: item.first_step_ciphertext ? await decrypt(item.first_step_ciphertext) : null,
@@ -820,11 +823,11 @@ Deno.serve(async (request) => {
         if (currentError) throw currentError;
         const result = current
           ? await admin.from("memo_later_items").update({
-              status: "active", activated_at: now, updated_at: now, resolved_at: null
+              status: "active", activated_at: now, deferred_at: null, updated_at: now, resolved_at: null
             }).eq("memo_id", memoId).eq("owner_id", ownerId)
           : await admin.from("memo_later_items").insert({
               memo_id: memoId, owner_id: ownerId, status: "active",
-              activated_at: now, updated_at: now, resolved_at: null,
+              activated_at: now, deferred_at: null, updated_at: now, resolved_at: null,
               roulette_enabled: false
             });
         if (result.error) throw result.error;
@@ -832,7 +835,7 @@ Deno.serve(async (request) => {
       }
       if (request.method === "PATCH") {
         const { data: current, error: currentError } = await admin.from("memo_later_items")
-          .select("memo_id,activated_at").eq("memo_id", memoId).eq("owner_id", ownerId).maybeSingle();
+          .select("memo_id,activated_at,deferred_at").eq("memo_id", memoId).eq("owner_id", ownerId).maybeSingle();
         if (currentError) throw currentError;
         if (!current) return json({ error: "not_found" }, 404);
         const body = await request.json();
@@ -863,7 +866,8 @@ Deno.serve(async (request) => {
         const status = action === "done" ? "done" : action === "abandon" ? "abandoned" : "active";
         const updates = {
           status,
-          activated_at: action === "later" ? now : current.activated_at,
+          activated_at: current.activated_at,
+          deferred_at: action === "later" ? now : current.deferred_at,
           updated_at: now,
           resolved_at: status === "active" ? null : now
         };
