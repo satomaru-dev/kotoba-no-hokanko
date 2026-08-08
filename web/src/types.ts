@@ -48,6 +48,17 @@ export interface CaptureResponse {
 
 export type FeedbackVerdict = "relevant" | "irrelevant";
 
+export interface SearchTerm {
+  text: string;
+  count: number;
+  last_used_at: string;
+}
+
+export interface SearchInsights {
+  recent: SearchTerm[];
+  frequent: SearchTerm[];
+}
+
 export interface IdeaThreadEntry {
   id: string;
   kind: "memo_link" | "reflection";

@@ -11,6 +11,7 @@ import type {
   RelatedMemory,
   Reminder,
   ReminderInput,
+  SearchInsights,
   WorkspaceOperationStatus,
   WorkspaceSummary
 } from "./types";
@@ -52,12 +53,21 @@ export const captureMemo = (input: CaptureInput): Promise<CaptureResponse> =>
   request("/capture", { method: "POST", body: JSON.stringify(input) });
 
 export const searchMemories = async (query: string): Promise<RelatedMemory[]> => {
-  const result = await request<{ query: string; results: RelatedMemory[] }>(
+  const result = await request<{ query: string; results: RelatedMemory[]; insights?: SearchInsights }>(
     "/search",
     { method: "POST", body: JSON.stringify({ query, max_results: 10 }) }
   );
   return result.results;
 };
+
+export const getSearchInsights = (): Promise<SearchInsights> =>
+  request<SearchInsights>("/search-insights");
+
+export const recordSearch = (query: string): Promise<SearchInsights> =>
+  request<SearchInsights>("/search-insights", {
+    method: "POST",
+    body: JSON.stringify({ query })
+  });
 
 export const listMemos = async (deleted = false): Promise<Memo[]> => {
   const result = await request<{ memos: Memo[] }>(`/memos?deleted=${deleted}`);

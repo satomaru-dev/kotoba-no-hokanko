@@ -16,12 +16,14 @@ import {
   getWorkspace,
   getIdeaThread,
   getPushPublicKey,
+  getSearchInsights,
   listDueReminders,
   listDoLater,
   listMemos,
   markReminderOpened,
   openWorkspace,
   restoreMemo,
+  recordSearch,
   saveFeedback,
   savePushSubscription,
   searchMemories,
@@ -50,6 +52,7 @@ import type {
   RelatedMemory,
   Reminder,
   ReminderInput,
+  SearchInsights,
   WorkspaceOperationStatus,
   WorkspaceSummary
 } from "./types";
@@ -60,6 +63,35 @@ type InstallPrompt = Event & { prompt: () => Promise<void> };
 const DIALOGUE_BETA = import.meta.env.VITE_DIALOGUE_BETA === "true";
 const REMINDER_BETA = import.meta.env.VITE_REMINDER_BETA === "true";
 const START_ASSIST_BETA = import.meta.env.VITE_START_ASSIST_BETA !== "false";
+const SEARCH_INSIGHTS_KEY = "kotoba-search-insights-v1";
+
+const emptySearchInsights = (): SearchInsights => ({ recent: [], frequent: [] });
+const readCachedSearchInsights = (): SearchInsights => {
+  try {
+    const value = localStorage.getItem(SEARCH_INSIGHTS_KEY);
+    return value ? JSON.parse(value) as SearchInsights : emptySearchInsights();
+  } catch {
+    return emptySearchInsights();
+  }
+};
+const cacheSearchInsights = (value: SearchInsights): void => {
+  try { localStorage.setItem(SEARCH_INSIGHTS_KEY, JSON.stringify(value)); } catch { /* supplementary cache */ }
+};
+const addCachedSearch = (query: string): SearchInsights => {
+  const text = query.normalize("NFKC").replace(/\s+/gu, " ").trim().toLocaleLowerCase("ja-JP");
+  if (!text) return readCachedSearchInsights();
+  const current = readCachedSearchInsights();
+  const terms = new Map([...current.recent, ...current.frequent].map((term) => [term.text, term]));
+  const previous = terms.get(text);
+  terms.set(text, { text, count: (previous?.count ?? 0) + 1, last_used_at: new Date().toISOString() });
+  const values = [...terms.values()];
+  const next = {
+    recent: [...values].sort((left, right) => right.last_used_at.localeCompare(left.last_used_at)).slice(0, 8),
+    frequent: [...values].sort((left, right) => right.count - left.count || right.last_used_at.localeCompare(left.last_used_at)).slice(0, 8)
+  };
+  cacheSearchInsights(next);
+  return next;
+};
 
 const formatDate = (value: string | null): string => {
   if (!value) return "日付不明";
@@ -78,6 +110,31 @@ const formatDateTime = (value: string): string =>
     minute: "2-digit"
   }).format(new Date(value));
 
+const formatRelativeDate = (value: string | null): string => {
+  if (!value) return "日付不明";
+  const date = new Date(value);
+  const now = new Date();
+  const sameDay = (left: Date, right: Date) => left.getFullYear() === right.getFullYear()
+    && left.getMonth() === right.getMonth()
+    && left.getDate() === right.getDate();
+  if (sameDay(date, now)) return `きょう ${new Intl.DateTimeFormat("ja-JP", { hour: "2-digit", minute: "2-digit" }).format(date)}`;
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (sameDay(date, yesterday)) return `きのう ${new Intl.DateTimeFormat("ja-JP", { hour: "2-digit", minute: "2-digit" }).format(date)}`;
+  return new Intl.DateTimeFormat("ja-JP", { month: "numeric", day: "numeric" }).format(date);
+};
+
+type NavIconKind = "write" | "later" | "search" | "recent" | "trash";
+
+const NavIcon = ({ kind }: { kind: NavIconKind }) => (
+  <svg className="nav-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    {kind === "write" && <><path d="M4 20h4L19.5 8.5a2.12 2.12 0 0 0-3-3L5 17v3z" /><path d="M14.5 6.5l3 3" /></>}
+    {kind === "later" && <><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 1.8" /></>}
+    {kind === "search" && <><circle cx="10.5" cy="10.5" r="6.5" /><path d="m15.5 15.5 5 5" /></>}
+    {kind === "recent" && <><circle cx="4.5" cy="6.5" r="1.3" fill="currentColor" stroke="none" /><path d="M9 6.5h11" /><circle cx="4.5" cy="12" r="1.3" fill="currentColor" stroke="none" /><path d="M9 12h11" /><circle cx="4.5" cy="17.5" r="1.3" fill="currentColor" stroke="none" /><path d="M9 17.5h11" /></>}
+    {kind === "trash" && <><path d="M4 7h16" /><path d="M9 7V4h6v3" /><path d="M6 7l1 13h10l1-13" /><path d="M10 11v5M14 11v5" /></>}
+  </svg>
+);
 const base64UrlToBytes = (value: string): Uint8Array => {
   const padding = "=".repeat((4 - value.length % 4) % 4);
   const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -226,6 +283,7 @@ export const App = () => {
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<RelatedMemory[]>([]);
+  const [searchInsights, setSearchInsights] = useState<SearchInsights>({ recent: [], frequent: [] });
   const [memos, setMemos] = useState<Memo[]>([]);
   const [trash, setTrash] = useState<Memo[]>([]);
   const [doLaterActive, setDoLaterActive] = useState<DoLaterItem[]>([]);
@@ -351,6 +409,13 @@ export const App = () => {
   useEffect(() => {
     if (tab === "recent" && (!cloudMode || session)) void refreshMemos();
   }, [tab, session, refreshMemos]);
+  useEffect(() => {
+    if (tab !== "search" || (cloudMode && !session)) return;
+    void getSearchInsights().then((value) => {
+      setSearchInsights(value);
+      cacheSearchInsights(value);
+    }).catch(() => setSearchInsights(readCachedSearchInsights()));
+  }, [tab, session]);
 
   useEffect(() => {
     if (tab === "do-later" && (!cloudMode || session)) void refreshDoLater();
@@ -419,17 +484,27 @@ export const App = () => {
     }
   };
 
-  const search = async (event: FormEvent) => {
-    event.preventDefault();
-    if (query.trim().length < 2) return;
+  const runSearch = async (value: string) => {
+    const cleanQuery = value.trim();
+    if (cleanQuery.length < 2) return;
+    setQuery(cleanQuery);
     setSearching(true);
     try {
-      setSearchResults(await searchMemories(query.trim()));
+      setSearchResults(await searchMemories(cleanQuery));
+      const insights = await recordSearch(cleanQuery);
+      setSearchInsights(insights);
+      cacheSearchInsights(insights);
     } catch {
-      setNotice("今は検索できません。書いた言葉は消えていません。");
+      setSearchInsights(addCachedSearch(cleanQuery));
+      setNotice("今は検索できません。検索語は端末に預かりました。");
     } finally {
       setSearching(false);
     }
+  };
+
+  const search = async (event: FormEvent) => {
+    event.preventDefault();
+    await runSearch(query);
   };
 
   const openMemory = async (memory: RelatedMemory) => {
@@ -667,7 +742,7 @@ export const App = () => {
   const navTitle = useMemo(() => {
     if (tab === "do-later") return "あとでやる";
     if (tab === "search") return "言葉をさがす";
-    if (tab === "recent") return "最近の言葉";
+    if (tab === "recent") return "最近";
     return "ことばの保管庫";
   }, [tab]);
 
@@ -678,19 +753,29 @@ export const App = () => {
 
   return (
     <div className="app-shell">
-      <header className="topbar">
+<header className="topbar">
         <div className="topbar-brand">
           <img className="header-mascot" src="./icons/icon-192.png" alt="" aria-hidden="true" />
-          <div>
-            <p className="eyebrow">{tab === "write" ? "自分の言葉と温度を、そのまま" : "保管庫"}</p>
-            <h1>{navTitle}</h1>
-          </div>
+          <h1>{navTitle}</h1>
         </div>
-        {installPrompt && (
-          <button className="install-button" onClick={() => void installPrompt.prompt()}>
-            ホームに置く
-          </button>
-        )}
+        <div className="topbar-actions">
+          {tab === "recent" && (
+            <button
+              className={`trash-header-button ${showTrash ? "active" : ""}`}
+              type="button"
+              aria-label={showTrash ? "最近の言葉に戻る" : "ゴミ箱を開く"}
+              onClick={() => setShowTrash((value) => !value)}
+            >
+              <NavIcon kind="trash" />
+              {trash.length > 0 && <small>{trash.length}</small>}
+            </button>
+          )}
+          {installPrompt && (
+            <button className="install-button" onClick={() => void installPrompt.prompt()}>
+              ホームに置く
+            </button>
+          )}
+        </div>
       </header>
 
       {REMINDER_BETA && dueReminders[0] && (
@@ -732,9 +817,11 @@ export const App = () => {
                 <span className="quiet-status">
                   {pendingCount > 0 ? `${pendingCount}件、端末で預かり中` : "原文のまま残ります"}
                 </span>
-                <button className="save-button" disabled={!text.trim() || saving} onClick={save}>
-                  {saving ? "残しています…" : "残す"}
-                </button>
+                {text.trim() && (
+                  <button className="save-button" disabled={saving} onClick={save}>
+                    {saving ? "残しています…" : "残す"}
+                  </button>
+                )}
               </div>
             </section>
             {saveState !== "idle" && (
@@ -785,12 +872,12 @@ export const App = () => {
               {doLaterActive.map((item) => (
                 <article className="do-later-card" key={item.memo_id}>
                   <button className="do-later-main" onClick={() => openDoLater(item)}>
-                    <time>{formatDate(item.memo.captured_at)}</time>
-                    <strong>{item.memo.title}</strong>
+                    <time>{formatRelativeDate(item.memo.captured_at)}</time>
+
                     {START_ASSIST_BETA && item.first_step && (
                       <em className="first-step-preview">まず、これだけ：{item.first_step}</em>
                     )}
-                    <span>{item.memo.current_text}</span>
+                    <span className="do-later-text">{item.memo.current_text}</span>
                   </button>
                   {START_ASSIST_BETA && (
                     <button className="setup-start-button" type="button" onClick={() => setSetupItem(item)}>
@@ -811,9 +898,9 @@ export const App = () => {
                     </div>
                   )}
                   <div className="do-later-actions">
-                    <button onClick={() => void actOnDoLater(item.memo_id, "done")}>やってやった。</button>
-                    <button onClick={() => void actOnDoLater(item.memo_id, "later")}>もう少しあとで。</button>
-                    <button onClick={() => void actOnDoLater(item.memo_id, "abandon")}>やっぱりやめる。</button>
+                    <button className="do-later-done" onClick={() => void actOnDoLater(item.memo_id, "done")}>やってやった。</button>
+                    <button className="do-later-abandon" onClick={() => void actOnDoLater(item.memo_id, "abandon")}>やめる</button>
+                    <button className="do-later-later" onClick={() => void actOnDoLater(item.memo_id, "later")}>あとで</button>
                   </div>
                 </article>
               ))}
@@ -836,8 +923,8 @@ export const App = () => {
                       <span className={`do-later-result ${item.status}`}>
                         {item.status === "done" ? "やってやった。" : "やっぱりやめる。"}
                       </span>
-                      <strong>{item.memo.title}</strong>
-                      <time>{formatDate(item.resolved_at)}</time>
+                      <strong>{item.memo.current_text}</strong>
+                      <time>{formatRelativeDate(item.resolved_at)}</time>
                     </button>
                   ))}
                   {doLaterResolved.length === 0 && (
@@ -849,22 +936,44 @@ export const App = () => {
           </section>
         )}
 
-        {tab === "search" && (
+{tab === "search" && (
           <section className="search-panel">
             <form onSubmit={search}>
               <label htmlFor="search">覚えている言葉でも、今の考えでも</label>
               <div className="search-box">
+                <span className="search-leading-icon" aria-hidden="true"><NavIcon kind="search" /></span>
                 <input
                   id="search"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="例：ゼロから考えるアイデア"
+                  enterKeyHint="search"
                 />
-                <button disabled={searching || query.trim().length < 2}>
-                  {searching ? "…" : "探す"}
-                </button>
               </div>
+              <p className="search-help">言葉を入れて、過去の自分に会いにいく。</p>
             </form>
+            {!query && searchInsights.recent.length > 0 && (
+              <section className="search-insight-section">
+                <h2>最近さがした言葉</h2>
+                <div className="search-chips">
+                  {searchInsights.recent.map((term) => (
+                    <button type="button" key={`recent-${term.text}`} className="search-chip" onClick={() => void runSearch(term.text)}>{term.text}</button>
+                  ))}
+                </div>
+              </section>
+            )}
+            {!query && searchInsights.frequent.length > 0 && (
+              <section className="search-insight-section">
+                <h2>よく出てくる言葉</h2>
+                <div className="search-chips">
+                  {searchInsights.frequent.map((term) => (
+                    <button type="button" key={`frequent-${term.text}`} className="search-chip warm" onClick={() => void runSearch(term.text)}>
+                      {term.text}<small>{term.count}</small>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
             {searchResults.length === 0 && query && !searching && (
               <p className="empty-message">強くつながる記録は、まだ見つかっていません。</p>
             )}
@@ -877,21 +986,12 @@ export const App = () => {
           </section>
         )}
 
-        {tab === "recent" && (
+{tab === "recent" && (
           <section className="recent-panel">
-            <div className="section-switch">
-              <button className={!showTrash ? "active" : ""} onClick={() => setShowTrash(false)}>
-                最近
-              </button>
-              <button className={showTrash ? "active" : ""} onClick={() => setShowTrash(true)}>
-                ゴミ箱{trash.length > 0 ? ` ${trash.length}` : ""}
-              </button>
-            </div>
             <div className="memo-list">
               {(showTrash ? trash : memos).map((memo) => (
                 <button className="memo-row" key={memo.id} onClick={() => setSelected(memo)}>
-                  <time>{formatDate(memo.captured_at)}</time>
-                  <strong>{memo.title}</strong>
+                  <time>{formatRelativeDate(memo.captured_at)}</time>
                   <span>{memo.current_text}</span>
                 </button>
               ))}
@@ -905,18 +1005,18 @@ export const App = () => {
         )}
       </main>
 
-      <nav className="bottom-nav" aria-label="メインメニュー">
+<nav className="bottom-nav" aria-label="メインメニュー">
         <button className={tab === "write" ? "active" : ""} onClick={() => setTab("write")}>
-          <span className="nav-icon">＋</span><span>書く</span>
+          <span className="nav-icon"><NavIcon kind="write" /></span><span>書く</span>
         </button>
         <button className={tab === "do-later" ? "active" : ""} onClick={() => setTab("do-later")}>
-          <span className="nav-icon">◦</span><span>あとでやる</span>
+          <span className="nav-icon"><NavIcon kind="later" /></span><span>あとでやる</span>
         </button>
         <button className={tab === "search" ? "active" : ""} onClick={() => setTab("search")}>
-          <span className="nav-icon">⌕</span><span>さがす</span>
+          <span className="nav-icon"><NavIcon kind="search" /></span><span>さがす</span>
         </button>
         <button className={tab === "recent" ? "active" : ""} onClick={() => setTab("recent")}>
-          <span className="nav-icon">≡</span><span>最近</span>
+          <span className="nav-icon"><NavIcon kind="recent" /></span><span>最近</span>
         </button>
       </nav>
 

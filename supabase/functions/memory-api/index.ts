@@ -520,6 +520,58 @@ const dispatchReminders = async (admin: AdminClient, ownerId: string) => {
   return { processed: reminders?.length ?? 0, delivered };
 };
 
+const normalizeSearchQuery = (value: string): string =>
+  value.normalize("NFKC").replace(/\s+/gu, " ").trim().toLocaleLowerCase("ja-JP");
+
+type SearchInsightRow = {
+  query_hash: string;
+  query_ciphertext: string;
+  search_count: number;
+  last_used_at: string;
+};
+
+const searchInsights = async (admin: AdminClient, ownerId: string) => {
+  const { data, error } = await admin.from("search_insights")
+    .select("query_hash,query_ciphertext,search_count,last_used_at")
+    .eq("owner_id", ownerId);
+  if (error) throw error;
+  const terms = await Promise.all(((data ?? []) as SearchInsightRow[]).map(async (row) => ({
+    text: await decrypt(row.query_ciphertext),
+    count: row.search_count,
+    last_used_at: row.last_used_at
+  })));
+  return {
+    recent: [...terms].sort((left, right) => right.last_used_at.localeCompare(left.last_used_at)).slice(0, 8),
+    frequent: [...terms].sort((left, right) => right.count - left.count || right.last_used_at.localeCompare(left.last_used_at)).slice(0, 8)
+  };
+};
+
+const recordSearchInsight = async (admin: AdminClient, ownerId: string, query: string) => {
+  const normalized = normalizeSearchQuery(query);
+  if (!normalized) return searchInsights(admin, ownerId);
+  const hash = await digestText(normalized);
+  const { data: existing, error: existingError } = await admin.from("search_insights")
+    .select("search_count").eq("owner_id", ownerId).eq("query_hash", hash).maybeSingle();
+  if (existingError) throw existingError;
+  const now = new Date().toISOString();
+  if (existing) {
+    const { error } = await admin.from("search_insights").update({
+      search_count: Number(existing.search_count) + 1,
+      last_used_at: now
+    }).eq("owner_id", ownerId).eq("query_hash", hash);
+    if (error) throw error;
+  } else {
+    const { error } = await admin.from("search_insights").insert({
+      owner_id: ownerId,
+      query_hash: hash,
+      query_ciphertext: await encrypt(normalized),
+      search_count: 1,
+      last_used_at: now
+    });
+    if (error) throw error;
+  }
+  return searchInsights(admin, ownerId);
+};
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
@@ -571,7 +623,7 @@ Deno.serve(async (request) => {
       return json({ memo, related }, 201);
     }
 
-    if (route === "/search" && request.method === "POST") {
+if (route === "/search" && request.method === "POST") {
       const body = await request.json();
       const query = String(body.query ?? "").trim();
       if (query.length < 2 || query.length > 20_000) return json({ error: "invalid_request" }, 400);
@@ -581,6 +633,17 @@ Deno.serve(async (request) => {
         query,
         results: await recall(admin, ownerId, query, undefined, requestedMax, minimumScore)
       });
+    }
+
+    if (route === "/search-insights" && request.method === "GET") {
+      return json(await searchInsights(admin, ownerId));
+    }
+
+    if (route === "/search-insights" && request.method === "POST") {
+      const body = await request.json();
+      const query = String(body.query ?? "").trim();
+      if (query.length < 2 || query.length > 20_000) return json({ error: "invalid_request" }, 400);
+      return json(await recordSearchInsight(admin, ownerId, query));
     }
 
     if (route === "/feedback" && request.method === "POST") {

@@ -121,4 +121,13 @@ describe("capture store", () => {
     await store.updateDoLater(secondId, "later", "2026-08-01T04:00:00.000Z");
     expect(store.listDoLater("active").map((item) => item.memo_id)).toEqual([firstId, secondId]);
   });
-});
+
+  it("records normalized search insights without changing memo data", async () => {
+    const { store } = await makeStore();
+    const first = await store.recordSearch("  アイデア   探索 ");
+    expect(first.recent[0]?.text).toBe("アイデア 探索");
+    await store.recordSearch("アイデア 探索");
+    const second = store.listSearchInsights();
+    expect(second.frequent[0]?.count).toBe(2);
+    expect(second.recent[0]?.text).toBe("アイデア 探索");
+  });});

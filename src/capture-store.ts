@@ -54,9 +54,21 @@ export interface DoLaterConfiguration {
   roulette_enabled: boolean;
 }
 
+export interface SearchTerm {
+  text: string;
+  count: number;
+  last_used_at: string;
+}
+
+export interface SearchInsights {
+  recent: SearchTerm[];
+  frequent: SearchTerm[];
+}
+
 interface StoredCaptureData {
   memos: CapturedMemo[];
   do_later: StoredDoLaterItem[];
+  search_insights?: SearchTerm[];
 }
 
 const titleFromText = (text: string): string => {
@@ -67,6 +79,7 @@ const titleFromText = (text: string): string => {
 export class CaptureStore {
   private memos = new Map<string, CapturedMemo>();
   private doLater = new Map<string, StoredDoLaterItem>();
+  private searchInsights = new Map<string, SearchTerm>();
 
   constructor(
     private readonly filePath: string,
@@ -78,7 +91,9 @@ export class CaptureStore {
       const parsed = JSON.parse(await fs.readFile(this.filePath, "utf8")) as CapturedMemo[] | StoredCaptureData;
       const memos = Array.isArray(parsed) ? parsed : parsed.memos;
       const doLater = Array.isArray(parsed) ? [] : (parsed.do_later ?? []);
+      const searchInsights = Array.isArray(parsed) ? [] : (parsed.search_insights ?? []);
       this.memos = new Map(memos.map((memo) => [memo.id, memo]));
+      this.searchInsights = new Map(searchInsights.map((item) => [item.text, item]));
       this.doLater = new Map(doLater.map((item) => [item.memo_id, {
         deferred_at: null,
         first_step: null,
@@ -98,7 +113,8 @@ export class CaptureStore {
     const temporary = `${this.filePath}.tmp`;
     const data: StoredCaptureData = {
       memos: [...this.memos.values()],
-      do_later: [...this.doLater.values()]
+      do_later: [...this.doLater.values()],
+      search_insights: [...this.searchInsights.values()]
     };
     await fs.writeFile(temporary, JSON.stringify(data, null, 2), "utf8");
     await fs.rename(temporary, this.filePath);
@@ -268,5 +284,26 @@ export class CaptureStore {
     this.doLater.set(id, item);
     await this.persist();
     return { ...item, memo };
+  }
+
+listSearchInsights(): SearchInsights {
+    const terms = [...this.searchInsights.values()];
+    return {
+      recent: [...terms].sort((left, right) => right.last_used_at.localeCompare(left.last_used_at)).slice(0, 8),
+      frequent: [...terms].sort((left, right) => right.count - left.count || right.last_used_at.localeCompare(left.last_used_at)).slice(0, 8)
+    };
+  }
+
+  async recordSearch(query: string, now = new Date().toISOString()): Promise<SearchInsights> {
+    const text = query.normalize("NFKC").replace(/\s+/gu, " ").trim().toLocaleLowerCase("ja-JP");
+    if (!text) return this.listSearchInsights();
+    const previous = this.searchInsights.get(text);
+    this.searchInsights.set(text, {
+      text,
+      count: (previous?.count ?? 0) + 1,
+      last_used_at: now
+    });
+    await this.persist();
+    return this.listSearchInsights();
   }
 }

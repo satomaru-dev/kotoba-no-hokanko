@@ -64,6 +64,19 @@ app.post("/api/search", async (request: Request, response: Response, next: NextF
   }
 });
 
+app.get("/api/search-insights", (_request: Request, response: Response) => {
+  response.json(captures.listSearchInsights());
+});
+
+app.post("/api/search-insights", async (request: Request, response: Response, next: NextFunction) => {
+  try {
+    const { query } = z.object({ query: z.string().trim().min(2).max(20_000) }).parse(request.body);
+    response.json(await captures.recordSearch(query));
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/api/memos", (request: Request, response: Response) => {
   const deleted = request.query.deleted === "true";
   const cursor = typeof request.query.cursor === "string" ? request.query.cursor : null;
