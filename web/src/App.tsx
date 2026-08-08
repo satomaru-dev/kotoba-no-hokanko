@@ -899,8 +899,8 @@ export const App = () => {
                   )}
                   <div className="do-later-actions">
                     <button className="do-later-done" onClick={() => void actOnDoLater(item.memo_id, "done")}>やってあげた。</button>
-                    <button className="do-later-abandon" onClick={() => void actOnDoLater(item.memo_id, "abandon")}>やっぱりやめる</button>
                     <button className="do-later-later" onClick={() => void actOnDoLater(item.memo_id, "later")}>まだやらない</button>
+                    <button className="do-later-abandon" onClick={() => void actOnDoLater(item.memo_id, "abandon")}>やっぱりやめる</button>
                   </div>
                 </article>
               ))}
