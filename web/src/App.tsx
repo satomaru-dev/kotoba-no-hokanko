@@ -106,36 +106,6 @@ const ensurePushSubscription = async (): Promise<boolean> => {
   return true;
 };
 
-type SpeechRecognitionResultLike = {
-  isFinal: boolean;
-  0?: { transcript: string };
-};
-
-type SpeechRecognitionEventLike = Event & {
-  resultIndex: number;
-  results: ArrayLike<SpeechRecognitionResultLike>;
-};
-
-type SpeechRecognitionLike = {
-  lang: string;
-  continuous: boolean;
-  interimResults: boolean;
-  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
-  onerror: (() => void) | null;
-  onend: (() => void) | null;
-  start: () => void;
-  stop: () => void;
-};
-
-type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
-
-const getSpeechRecognitionConstructor = (): SpeechRecognitionConstructor | null => {
-  const browserWindow = window as Window & {
-    SpeechRecognition?: SpeechRecognitionConstructor;
-    webkitSpeechRecognition?: SpeechRecognitionConstructor;
-  };
-  return browserWindow.SpeechRecognition ?? browserWindow.webkitSpeechRecognition ?? null;
-};
 const RelatedCards = ({
   memories,
   queryMemoId,
@@ -199,7 +169,7 @@ const AuthScreen = ({ onReady }: { onReady: (session: Session) => void }) => {
     setError("");
     const redirect = new URL(window.location.href);
     redirect.hash = "";
-    redirect.search = new URLSearchParams(window.location.search).get("voice") === "1" ? "?voice=1" : "";
+    redirect.search = "";
     const { error: authError } = await supabase!.auth.signInWithOtp({
       email,
       options: { emailRedirectTo: redirect.toString() }
@@ -274,62 +244,14 @@ export const App = () => {
   const [notice, setNotice] = useState("");
   const textarea = useRef<HTMLTextAreaElement>(null);
   const saveMessage = useRef<HTMLDivElement>(null);
-  const recognition = useRef<SpeechRecognitionLike | null>(null);
-  const voiceMode = useMemo(() => new URLSearchParams(window.location.search).get("voice") === "1", []);
-  const [voiceSupported, setVoiceSupported] = useState(false);
-  const [voiceListening, setVoiceListening] = useState(false);
 
   useEffect(() => {
-    setVoiceSupported(Boolean(getSpeechRecognitionConstructor()));
     const focusId = window.setTimeout(() => {
       if (tab === "write") textarea.current?.focus({ preventScroll: true });
     }, 120);
     return () => window.clearTimeout(focusId);
   }, [tab]);
 
-  const stopVoice = () => {
-    recognition.current?.stop();
-    setVoiceListening(false);
-  };
-
-  const startVoice = () => {
-    const Constructor = getSpeechRecognitionConstructor();
-    if (!Constructor) {
-      setNotice("この環境では音声入力に対応していません。キーボードで入力できます。");
-      return;
-    }
-    recognition.current?.stop();
-    const nextRecognition = new Constructor();
-    nextRecognition.lang = "ja-JP";
-    nextRecognition.continuous = false;
-    nextRecognition.interimResults = false;
-    nextRecognition.onresult = (event) => {
-      let transcript = "";
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        const result = event.results[index];
-        if (result?.isFinal) transcript += result[0]?.transcript ?? "";
-      }
-      if (transcript) {
-        setText((current) => `${current}${current && !current.endsWith("\n") ? "\n" : ""}${transcript}`);
-      }
-    };
-    nextRecognition.onerror = () => {
-      setVoiceListening(false);
-      setNotice("音声入力を開始できませんでした。マイクの許可を確認してください。");
-    };
-    nextRecognition.onend = () => setVoiceListening(false);
-    recognition.current = nextRecognition;
-    textarea.current?.blur();
-    setVoiceListening(true);
-    try {
-      nextRecognition.start();
-    } catch {
-      setVoiceListening(false);
-      setNotice("音声入力を開始できませんでした。もう一度お試しください。");
-    }
-  };
-
-  useEffect(() => () => recognition.current?.stop(), []);
   useEffect(() => {
     if (!notice) return;
     const timeoutId = window.setTimeout(() => setNotice(""), 2800);
@@ -795,19 +717,7 @@ export const App = () => {
           <>
             <section className="write-panel">
               <label className="sr-only" htmlFor="thought">思いついた言葉</label>
-              {voiceMode && (
-                <div className="voice-mode-panel" aria-live="polite">
-                  <strong>音声で残す</strong>
-                  <span>{voiceListening ? "話してください…" : "マイクを押して話し始めます"}</span>
-                  {voiceSupported ? (
-                    <button className="voice-button voice-mode-button" type="button" onClick={voiceListening ? stopVoice : startVoice}>
-                      {voiceListening ? "停止" : "話し始める"}
-                    </button>
-                  ) : (
-                    <small>この環境では音声入力に対応していません。キーボードで入力できます。</small>
-                  )}
-                </div>
-              )}`r`n              <textarea
+              <textarea
                 ref={textarea}
                 id="thought"
                 value={text}
@@ -822,11 +732,6 @@ export const App = () => {
                 <span className="quiet-status">
                   {pendingCount > 0 ? `${pendingCount}件、端末で預かり中` : "原文のまま残ります"}
                 </span>
-                {voiceSupported && (
-                  <button className="voice-button" type="button" onClick={voiceListening ? stopVoice : startVoice} aria-label="音声入力">
-                    {voiceListening ? "停止" : "🎙️ 音声"}
-                  </button>
-                )}
                 <button className="save-button" disabled={!text.trim() || saving} onClick={save}>
                   {saving ? "残しています…" : "残す"}
                 </button>
