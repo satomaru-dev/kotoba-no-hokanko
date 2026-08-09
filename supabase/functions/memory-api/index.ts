@@ -334,7 +334,18 @@ const loadDoLaterItems = async (
     : query.in("status", ["done", "abandoned"]).order("resolved_at", { ascending: false });
   const { data: rawItems, error } = await query.limit(100);
   if (error) throw error;
-  const items = rawItems ?? [];
+  const items = [...(rawItems ?? [])].sort((left, right) => {
+    if (view !== "active") return (right.resolved_at ?? right.updated_at).localeCompare(left.resolved_at ?? left.updated_at);
+    const rank = { do_later: 1, keep_in_mind: 2, important_insight: 3 } as Record<string, number>;
+    const leftRank = rank[left.attention_level] ?? 1;
+    const rightRank = rank[right.attention_level] ?? 1;
+    if (leftRank !== rightRank) return rightRank - leftRank;
+    const leftBottom = left.bottom_order !== null;
+    const rightBottom = right.bottom_order !== null;
+    if (leftBottom !== rightBottom) return leftBottom ? 1 : -1;
+    if (leftBottom && rightBottom) return Number(left.bottom_order ?? 0) - Number(right.bottom_order ?? 0);
+    return right.activated_at.localeCompare(left.activated_at);
+  });
   const memoIds = items.map((item) => item.memo_id);
   const { data: memoRows, error: memoError } = memoIds.length === 0
     ? { data: [], error: null }
@@ -352,6 +363,7 @@ const loadDoLaterItems = async (
       activated_at: item.activated_at,
       deferred_at: item.deferred_at ?? null,
       bottom_order: item.bottom_order ?? null,
+      attention_level: item.attention_level ?? "do_later",
       updated_at: item.updated_at,
       resolved_at: item.resolved_at,
       first_step: item.first_step_ciphertext ? await decrypt(item.first_step_ciphertext) : null,
@@ -881,16 +893,19 @@ if (route === "/search" && request.method === "POST") {
       if (!memo) return json({ error: "not_found" }, 404);
       const now = new Date().toISOString();
       if (request.method === "POST") {
+        const body = await request.json().catch(() => ({}));
+        const attentionLevel = String(body.attention_level ?? "do_later");
+        if (!["do_later", "keep_in_mind", "important_insight"].includes(attentionLevel)) return json({ error: "invalid_request" }, 400);
         const { data: current, error: currentError } = await admin.from("memo_later_items")
           .select("memo_id").eq("memo_id", memoId).eq("owner_id", ownerId).maybeSingle();
         if (currentError) throw currentError;
         const result = current
           ? await admin.from("memo_later_items").update({
-              status: "active", activated_at: now, deferred_at: null, bottom_order: null, updated_at: now, resolved_at: null
+              status: "active", activated_at: now, deferred_at: null, bottom_order: null, attention_level: attentionLevel, updated_at: now, resolved_at: null
             }).eq("memo_id", memoId).eq("owner_id", ownerId)
           : await admin.from("memo_later_items").insert({
               memo_id: memoId, owner_id: ownerId, status: "active",
-              activated_at: now, deferred_at: null, bottom_order: null, updated_at: now, resolved_at: null,
+              activated_at: now, deferred_at: null, bottom_order: null, attention_level: attentionLevel, updated_at: now, resolved_at: null,
               roulette_enabled: false
             });
         if (result.error) throw result.error;
@@ -898,10 +913,18 @@ if (route === "/search" && request.method === "POST") {
       }
       if (request.method === "PATCH") {
         const { data: current, error: currentError } = await admin.from("memo_later_items")
-          .select("memo_id,activated_at,deferred_at,bottom_order").eq("memo_id", memoId).eq("owner_id", ownerId).maybeSingle();
+          .select("memo_id,activated_at,deferred_at,bottom_order,attention_level").eq("memo_id", memoId).eq("owner_id", ownerId).maybeSingle();
         if (currentError) throw currentError;
         if (!current) return json({ error: "not_found" }, 404);
         const body = await request.json();
+        if (body.attention_level !== undefined) {
+          const attentionLevel = String(body.attention_level);
+          if (!["do_later", "keep_in_mind", "important_insight"].includes(attentionLevel)) return json({ error: "invalid_request" }, 400);
+          const { error } = await admin.from("memo_later_items").update({ attention_level: attentionLevel, updated_at: now })
+            .eq("memo_id", memoId).eq("owner_id", ownerId);
+          if (error) throw error;
+          return json({ item: await loadDoLaterItem(admin, ownerId, memoId) });
+        }
         if (body.configuration !== undefined) {
           const configuration = body.configuration as Record<string, unknown>;
           const firstStep = configuration.first_step == null ? null : String(configuration.first_step);

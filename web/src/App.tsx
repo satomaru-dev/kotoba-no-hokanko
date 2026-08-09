@@ -31,6 +31,7 @@ import {
   trashMemo,
   unlinkWorkspace,
   updateDoLater,
+  updateDoLaterAttention,
   updateMemo
 } from "./api";
 import {
@@ -43,6 +44,7 @@ import {
   removeQueuedReminder
 } from "./offline";
 import type {
+  AttentionLevel,
   CaptureInput,
   DoLaterAction,
   DoLaterItem,
@@ -66,6 +68,7 @@ const START_ASSIST_BETA = import.meta.env.VITE_START_ASSIST_BETA !== "false";
 const SEARCH_INSIGHTS_KEY = "kotoba-search-insights-v1";
 
 const emptySearchInsights = (): SearchInsights => ({ recent: [], frequent: [] });
+const attentionLabel = (level: AttentionLevel): string => ({ do_later: "\u3042\u3068\u3067\u3084\u308b", keep_in_mind: "\u3057\u3070\u3089\u304f\u610f\u8b58", important_insight: "\u91cd\u8981\u306a\u6c17\u3065\u304d" }[level]);
 const readCachedSearchInsights = (): SearchInsights => {
   try {
     const value = localStorage.getItem(SEARCH_INSIGHTS_KEY);
@@ -493,7 +496,7 @@ export const App = () => {
       const result = await captureMemo(input);
       setRelated(result.related);
       setLastSavedMemo(result.memo);
-      setShowReminder(REMINDER_BETA);
+      setShowReminder(true);
       setSaveState("saved");
       triggerReaction();
     } catch {
@@ -581,25 +584,17 @@ export const App = () => {
     }
   };
 
-  const scheduleReminder = async (remindAt: Date) => {
+  const chooseAttention = async (attentionLevel: AttentionLevel) => {
     if (!lastSavedMemo) return;
-    const input: ReminderInput = {
-      client_id: crypto.randomUUID(),
-      memo_id: lastSavedMemo.id,
-      remind_at: remindAt.toISOString()
-    };
     try {
-      const pushReady = await ensurePushSubscription();
-      if (!navigator.onLine) throw new Error("offline");
-      await createReminder(input);
-      setNotice(pushReady
-        ? `${formatDateTime(input.remind_at)}に、もう一度知らせます。`
-        : "通知は許可されていないため、次にアプリを開いた時に表示します。");
-    } catch {
-      await queueReminder(input);
-      setNotice("通信が戻ったら、リマインダーを登録します。");
-    } finally {
+      await addDoLater(lastSavedMemo.id, attentionLevel);
+      if (attentionLevel === "do_later") setLastSavedMarked(true);
+      await refreshDoLater();
       setShowReminder(false);
+      setNotice("この言葉の置き場所を決めました。");
+      triggerReaction();
+    } catch {
+      setNotice("今は重要度を保存できませんでした。メモは残っています。");
     }
   };
 
@@ -623,6 +618,17 @@ export const App = () => {
       triggerReaction();
     } catch {
       setNotice("今は「あとでやる」に置けませんでした。メモは残っています。");
+    }
+  };
+
+  const setAttentionForMemo = async (memo: Memo, attentionLevel: AttentionLevel) => {
+    try {
+      await addDoLater(memo.id, attentionLevel);
+      await refreshDoLater();
+      setNotice("重要度を変えました。");
+      triggerReaction();
+    } catch {
+      setNotice("重要度を変更できませんでした。メモは変わっていません。");
     }
   };
 
@@ -886,9 +892,9 @@ export const App = () => {
                 {lastSavedMarked ? "あとでやるに置きました" : "あとでやる"}
               </button>
             )}
-            {REMINDER_BETA && showReminder && lastSavedMemo && (
-              <ReminderChooser
-                onSchedule={(date) => void scheduleReminder(date)}
+            {showReminder && lastSavedMemo && (
+              <AttentionChooser
+                onSelect={(level) => void chooseAttention(level)}
                 onClose={() => setShowReminder(false)}
               />
             )}
@@ -915,7 +921,7 @@ export const App = () => {
               {doLaterActive.map((item) => (
                 <article className="do-later-card" key={item.memo_id}>
                   <button className="do-later-main" onClick={() => openDoLater(item)}>
-                    <time>{formatRelativeDate(item.memo.captured_at)}</time>
+                    <span className="attention-label">{attentionLabel(item.attention_level)}</span><time>{formatRelativeDate(item.memo.captured_at)}</time>
 
                     {START_ASSIST_BETA && item.first_step && (
                       <em className="first-step-preview">まず、これだけ：{item.first_step}</em>
@@ -1069,6 +1075,7 @@ export const App = () => {
           onClose={() => setSelected(null)}
           onDialogue={DIALOGUE_BETA ? () => void beginThread(selected.id) : undefined}
           onDoLater={!selected.deleted_at ? () => void markDoLater(selected) : undefined}
+          onAttention={!selected.deleted_at ? (level) => void setAttentionForMemo(selected, level) : undefined}
           onChanged={async () => {
             setSelected(null);
             await refreshMemos();
@@ -1229,46 +1236,17 @@ const DoLaterFocusDialog = ({ item, onClose, onOpenMemo }: { item: DoLaterItem; 
   </div>
 );
 
-const ReminderChooser = ({
-  onSchedule,
-  onClose
-}: {
-  onSchedule: (date: Date) => void;
-  onClose: () => void;
-}) => {
-  const [custom, setCustom] = useState("");
-  const now = new Date();
-  const tonight = new Date(now);
-  tonight.setHours(21, 0, 0, 0);
-  const tomorrow = new Date(now);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  tomorrow.setHours(8, 0, 0, 0);
-  const showTonight = now.getHours() < 20 || (now.getHours() === 20 && now.getMinutes() < 30);
-  return (
-    <section className="reminder-chooser">
-      <div>
-        <strong>あとで、もう一度考える？</strong>
-        <button aria-label="閉じる" onClick={onClose}>×</button>
-      </div>
-      <p>通知には、この言葉の冒頭が表示されます。</p>
-      <div className="reminder-presets">
-        <button onClick={() => onSchedule(new Date(Date.now() + 60 * 60 * 1000))}>1時間後</button>
-        {showTonight && <button onClick={() => onSchedule(tonight)}>今夜21時</button>}
-        <button onClick={() => onSchedule(tomorrow)}>明日の朝8時</button>
-      </div>
-      <div className="custom-reminder">
-        <input
-          type="datetime-local"
-          value={custom}
-          onChange={(event) => setCustom(event.target.value)}
-          aria-label="日時を指定"
-        />
-        <button disabled={!custom} onClick={() => onSchedule(new Date(custom))}>この日時</button>
-      </div>
-    </section>
-  );
-};
-
+const AttentionChooser = ({ onSelect, onClose }: { onSelect: (level: AttentionLevel) => void; onClose: () => void }) => (
+  <section className="reminder-chooser attention-chooser">
+    <div><strong>{"\u3053\u306e\u8a00\u8449\u3092\u3001\u3069\u3093\u306a\u3075\u3046\u306b\u6b8b\u3057\u3066\u304a\u304f\uff1f"}</strong><button aria-label="close" onClick={onClose}>x</button></div>
+    <p>{"\u65e5\u6642\u3067\u306f\u306a\u304f\u3001\u4eca\u306e\u81ea\u5206\u3068\u306e\u8ddd\u96e2\u611f\u3092\u9078\u3073\u307e\u3059\u3002"}</p>
+    <div className="attention-options">
+      <button onClick={() => onSelect("do_later")}><strong>{"\u3042\u3068\u3067\u3084\u308b"}</strong><small>{"\u884c\u52d5\u306b\u3064\u306a\u304c\u308a\u305d\u3046"}</small></button>
+      <button onClick={() => onSelect("keep_in_mind")}><strong>{"\u3057\u3070\u3089\u304f\u610f\u8b58\u3057\u3066\u304a\u304d\u305f\u3044"}</strong><small>{"\u4eca\u306e\u81ea\u5206\u306e\u4e2d\u306b\u7f6e\u3044\u3066\u304a\u304f"}</small></button>
+      <button onClick={() => onSelect("important_insight")}><strong>{"\u4eca\u306e\u81ea\u5206\u306b\u3068\u3063\u3066\u7d50\u69cb\u91cd\u8981\u306a\u6c17\u3065\u304d"}</strong><small>{"\u512a\u5148\u7684\u306b\u76ee\u306b\u5165\u308c\u308b"}</small></button>
+    </div>
+  </section>
+);
 const MemoryPreviewDialog = ({
   memory,
   onClose,
@@ -1305,6 +1283,7 @@ const IdeaThreadDialog = ({
 }) => {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [attentionVisible, setAttentionVisible] = useState(false);
   const submit = async () => {
     if (!text.trim() || busy) return;
     setBusy(true);
@@ -1355,19 +1334,22 @@ const MemoDialog = ({
   onClose,
   onChanged,
   onDialogue,
-  onDoLater
+  onDoLater,
+  onAttention
 }: {
   memo: Memo;
   onClose: () => void;
   onChanged: () => Promise<void>;
   onDialogue?: () => void;
   onDoLater?: () => void;
+  onAttention?: (level: AttentionLevel) => void;
 }) => {
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(memo.title);
   const [text, setText] = useState(memo.current_text);
   const [historyVisible, setHistoryVisible] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [attentionVisible, setAttentionVisible] = useState(false);
   const save = async () => {
     setBusy(true);
     await updateMemo(memo.id, text, title);
@@ -1422,9 +1404,13 @@ const MemoDialog = ({
           </button>
         )}
         {onDoLater && !editing && (
-          <button className="do-later-dialog-button" onClick={onDoLater}>
-            あとでやる
-          </button>
+          <button className="do-later-dialog-button" onClick={onDoLater}>あとでやる</button>
+        )}
+        {onAttention && !editing && (
+          <>
+            <button className="do-later-dialog-button" onClick={() => setAttentionVisible((value) => !value)}>重要度を変える</button>
+            {attentionVisible && <AttentionChooser onSelect={(level) => { setAttentionVisible(false); onAttention(level); }} onClose={() => setAttentionVisible(false)} />}
+          </>
         )}
         <div className="dialog-actions">
           {memo.deleted_at ? (

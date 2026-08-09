@@ -1,5 +1,6 @@
 import { createClient, type Session } from "@supabase/supabase-js";
 import type {
+  AttentionLevel,
   CaptureInput,
   CaptureResponse,
   DoLaterAction,
@@ -169,9 +170,10 @@ export const listDoLater = async (view: "active" | "resolved"): Promise<DoLaterI
   return result.items;
 };
 
-export const addDoLater = async (memoId: string): Promise<DoLaterItem> => {
+export const addDoLater = async (memoId: string, attentionLevel: AttentionLevel = "do_later"): Promise<DoLaterItem> => {
   const result = await request<{ item: DoLaterItem }>(`/memos/${memoId}/do-later`, {
-    method: "POST"
+    method: "POST",
+    body: JSON.stringify({ attention_level: attentionLevel })
   });
   return result.item;
 };
@@ -183,6 +185,14 @@ export const updateDoLater = async (
   const result = await request<{ item: DoLaterItem }>(`/memos/${memoId}/do-later`, {
     method: "PATCH",
     body: JSON.stringify({ action })
+  });
+  return result.item;
+};
+
+export const updateDoLaterAttention = async (memoId: string, attentionLevel: AttentionLevel): Promise<DoLaterItem> => {
+  const result = await request<{ item: DoLaterItem }>(`/memos/${memoId}/do-later`, {
+    method: "PATCH",
+    body: JSON.stringify({ attention_level: attentionLevel })
   });
   return result.item;
 };

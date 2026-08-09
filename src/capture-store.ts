@@ -21,6 +21,7 @@ export interface CapturedMemo {
   revisions: MemoRevision[];
 }
 
+export type AttentionLevel = "do_later" | "keep_in_mind" | "important_insight";
 export type DoLaterStatus = "active" | "done" | "abandoned";
 
 export interface DoLaterItem {
@@ -29,6 +30,7 @@ export interface DoLaterItem {
   activated_at: string;
   deferred_at: string | null;
   bottom_order: number | null;
+  attention_level: AttentionLevel;
   updated_at: string;
   resolved_at: string | null;
   first_step: string | null;
@@ -43,6 +45,7 @@ interface StoredDoLaterItem {
   activated_at: string;
   deferred_at: string | null;
   bottom_order: number | null;
+  attention_level: AttentionLevel;
   updated_at: string;
   resolved_at: string | null;
   first_step: string | null;
@@ -99,6 +102,7 @@ export class CaptureStore {
       this.doLater = new Map(doLater.map((item) => [item.memo_id, {
         deferred_at: null,
         bottom_order: null,
+        attention_level: "do_later",
         first_step: null,
         launch_url: null,
         roulette_enabled: false,
@@ -214,6 +218,10 @@ export class CaptureStore {
       .filter((item) => item.memo && !item.memo.deleted_at)
       .sort((left, right) => {
         if (view === "active") {
+          const rank = { do_later: 1, keep_in_mind: 2, important_insight: 3 } as const;
+          const leftRank = rank[left.attention_level] ?? 1;
+          const rightRank = rank[right.attention_level] ?? 1;
+          if (leftRank !== rightRank) return rightRank - leftRank;
           const leftBottom = left.bottom_order !== null;
           const rightBottom = right.bottom_order !== null;
           if (leftBottom !== rightBottom) return leftBottom ? 1 : -1;
@@ -226,7 +234,10 @@ export class CaptureStore {
       });
   }
 
-  async addDoLater(id: string, now = new Date().toISOString()): Promise<DoLaterItem | null> {
+  async addDoLater(id: string, attentionLevelOrNow: AttentionLevel | string = "do_later", now = new Date().toISOString()): Promise<DoLaterItem | null> {
+    const legacyTimestamp = attentionLevelOrNow.includes("T");
+    const attentionLevel: AttentionLevel = legacyTimestamp ? "do_later" : attentionLevelOrNow as AttentionLevel;
+    if (legacyTimestamp) now = attentionLevelOrNow;
     const memo = this.memos.get(id);
     if (!memo || memo.deleted_at) return null;
     const previous = this.doLater.get(id);
@@ -234,6 +245,7 @@ export class CaptureStore {
       ...(previous ?? {
         deferred_at: null,
         bottom_order: null,
+        attention_level: "do_later",
         first_step: null,
         launch_url: null,
         roulette_enabled: false
@@ -243,9 +255,20 @@ export class CaptureStore {
       activated_at: now,
       deferred_at: null,
       bottom_order: null,
+      attention_level: attentionLevel,
       updated_at: now,
       resolved_at: null
     };
+    this.doLater.set(id, item);
+    await this.persist();
+    return { ...item, memo };
+  }
+
+  async updateAttentionLevel(id: string, attentionLevel: AttentionLevel, now = new Date().toISOString()): Promise<DoLaterItem | null> {
+    const memo = this.memos.get(id);
+    const current = this.doLater.get(id);
+    if (!memo || memo.deleted_at || !current || current.status !== "active") return null;
+    const item: StoredDoLaterItem = { ...current, attention_level: attentionLevel, updated_at: now };
     this.doLater.set(id, item);
     await this.persist();
     return { ...item, memo };

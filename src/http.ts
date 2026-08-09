@@ -148,7 +148,8 @@ app.get("/api/do-later", (request: Request, response: Response) => {
 
 app.post("/api/memos/:id/do-later", async (request: Request, response: Response, next: NextFunction) => {
   try {
-    const item = await captures.addDoLater(String(request.params.id ?? ""));
+    const body = request.body as { attention_level?: string };
+    const item = await captures.addDoLater(String(request.params.id ?? ""), z.enum(["do_later", "keep_in_mind", "important_insight"]).catch("do_later").parse(body.attention_level));
     if (!item) {
       response.status(404).json({ error: "not_found" });
       return;
@@ -161,9 +162,11 @@ app.post("/api/memos/:id/do-later", async (request: Request, response: Response,
 
 app.patch("/api/memos/:id/do-later", async (request: Request, response: Response, next: NextFunction) => {
   try {
-    const body = request.body as { action?: string; configuration?: unknown };
+    const body = request.body as { action?: string; configuration?: unknown; attention_level?: string };
     const id = String(request.params.id ?? "");
-    const item = body.configuration !== undefined
+    const item = body.attention_level !== undefined
+      ? await captures.updateAttentionLevel(id, z.enum(["do_later", "keep_in_mind", "important_insight"]).parse(body.attention_level))
+      : body.configuration !== undefined
       ? await captures.configureDoLater(id, z.object({
           first_step: z.string().max(500).nullable(),
           launch_url: z.string().url().refine((value) => /^https?:$/.test(new URL(value).protocol)).nullable(),

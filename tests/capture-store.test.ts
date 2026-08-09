@@ -122,6 +122,18 @@ describe("capture store", () => {
     expect(store.listDoLater("active").map((item) => item.memo_id)).toEqual([firstId, secondId]);
   });
 
+  it("orders active items by attention level and preserves legacy defaults", async () => {
+    const { store } = await makeStore();
+    const ids = ["99999999-9999-4999-8999-999999999991", "99999999-9999-4999-8999-999999999992", "99999999-9999-4999-8999-999999999993"];
+    await store.capture(ids[0]!, "one", "2026-08-01T00:00:00.000Z");
+    await store.capture(ids[1]!, "two", "2026-08-01T01:00:00.000Z");
+    await store.capture(ids[2]!, "three", "2026-08-01T02:00:00.000Z");
+    await store.addDoLater(ids[0]!, "2026-08-01T03:00:00.000Z");
+    await store.addDoLater(ids[1]!, "keep_in_mind", "2026-08-01T04:00:00.000Z");
+    await store.addDoLater(ids[2]!, "important_insight", "2026-08-01T05:00:00.000Z");
+    expect(store.listDoLater("active").map((item) => item.memo_id)).toEqual([ids[2], ids[1], ids[0]]);
+  });
+
   it("records normalized search insights without changing memo data", async () => {
     const { store } = await makeStore();
     const first = await store.recordSearch("  アイデア   探索 ");

@@ -97,6 +97,7 @@ export interface ReminderInput {
   remind_at: string;
 }
 
+export type AttentionLevel = "do_later" | "keep_in_mind" | "important_insight";
 export type DoLaterStatus = "active" | "done" | "abandoned";
 export type DoLaterAction = "done" | "later" | "abandon";
 
@@ -106,6 +107,7 @@ export interface DoLaterItem {
   activated_at: string;
   deferred_at: string | null;
   bottom_order: number | null;
+  attention_level: AttentionLevel;
   updated_at: string;
   resolved_at: string | null;
   first_step: string | null;
