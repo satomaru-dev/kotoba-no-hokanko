@@ -926,7 +926,7 @@ export const App = () => {
               {doLaterActive.map((item) => (
                 <article className="do-later-card" key={item.memo_id}>
                   <button className="do-later-main" onClick={() => openDoLater(item)}>
-                    <span className="attention-label">{attentionLabel(item.attention_level)}</span><time>{formatRelativeDate(item.memo.captured_at)}</time>
+                    <time>{formatRelativeDate(item.memo.captured_at)}</time>
 
                     {START_ASSIST_BETA && item.first_step && (
                       <em className="first-step-preview">まず、これだけ：{item.first_step}</em>
