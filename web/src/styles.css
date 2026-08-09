@@ -274,3 +274,5 @@ button:disabled { cursor: default; }
 .trash-svg { width: 21px; height: 21px; display: block; }
 
 .trash-header-button .nav-svg { width: 21px; height: 21px; }
+
+.reaction-mascot { position: fixed; z-index: 79; right: 18px; bottom: 145px; display: block; width: 72px; height: 72px; border-radius: 18px; object-fit: cover; box-shadow: 0 8px 24px rgba(59,45,29,.14); }

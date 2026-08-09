@@ -217,10 +217,17 @@ const RelatedCards = ({
   );
 };
 
+const ReactionMascot = ({ className }: { className: string }) => (
+  <picture>
+    <source media="(prefers-reduced-motion: reduce)" srcSet="./icons/icon-192.png" />
+    <img className={className} src="./animations/squirrel-reaction-short.gif" alt="" aria-hidden="true" />
+  </picture>
+);
+
 const AnimatedMascot = ({ className }: { className: string }) => (
   <picture>
     <source media="(prefers-reduced-motion: reduce)" srcSet="./icons/icon-192.png" />
-    <img className={className} src="./animations/squirrel-animation-12fps.gif" alt="" aria-hidden="true" />
+    <img className={className} src="./animations/squirrel-reaction-short.gif" alt="" aria-hidden="true" />
   </picture>
 );
 
@@ -280,7 +287,7 @@ export const App = () => {
   const [session, setSession] = useState<Session | null | undefined>(cloudMode ? undefined : null);
   const [minimumLoadingDone, setMinimumLoadingDone] = useState(false);
   useEffect(() => {
-    const timer = window.setTimeout(() => setMinimumLoadingDone(true), 2600);
+    const timer = window.setTimeout(() => setMinimumLoadingDone(true), 900);
     return () => window.clearTimeout(timer);
   }, []);
   const [tab, setTab] = useState<Tab>("write");
@@ -312,8 +319,14 @@ export const App = () => {
   const [dueReminders, setDueReminders] = useState<Reminder[]>([]);
   const [installPrompt, setInstallPrompt] = useState<InstallPrompt | null>(null);
   const [notice, setNotice] = useState("");
+  const [reactionVisible, setReactionVisible] = useState(false);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const saveMessage = useRef<HTMLDivElement>(null);
+
+  const triggerReaction = () => {
+    setReactionVisible(true);
+    window.setTimeout(() => setReactionVisible(false), 900);
+  };
 
   useEffect(() => {
     const focusId = window.setTimeout(() => {
@@ -482,10 +495,12 @@ export const App = () => {
       setLastSavedMemo(result.memo);
       setShowReminder(REMINDER_BETA);
       setSaveState("saved");
+      triggerReaction();
     } catch {
       await queueCapture(input);
       await refreshPending();
       setSaveState("queued");
+      triggerReaction();
     } finally {
       textarea.current?.blur();
       setText("");
@@ -605,6 +620,7 @@ export const App = () => {
       if (lastSavedMemo?.id === memo.id) setLastSavedMarked(true);
       await refreshDoLater();
       setNotice("「あとでやる」に置きました。");
+      triggerReaction();
     } catch {
       setNotice("今は「あとでやる」に置けませんでした。メモは残っています。");
     }
@@ -625,6 +641,7 @@ export const App = () => {
       if (action === "later") {
         moveDoLaterToBottom(memoId);
         setNotice("一覧の末尾へ移しました。");
+        triggerReaction();
         return;
       }
       await refreshDoLater();
@@ -1102,6 +1119,7 @@ export const App = () => {
           onOpenMemo={() => { setFocusItem(null); setSelected(focusItem.memo); }}
         />
       )}
+      {reactionVisible && <ReactionMascot className="reaction-mascot" />}
       {notice && (
         <button className="notice" onClick={() => setNotice("")}>{notice}</button>
       )}

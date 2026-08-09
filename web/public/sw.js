@@ -1,9 +1,10 @@
-const CACHE = "kotoba-shell-v4";
+const CACHE = "kotoba-shell-v5";
 const SHELL = [
   "./",
   "./manifest.webmanifest",
   "./icons/icon-192.png",
   "./animations/squirrel-animation-12fps.gif",
+  "./animations/squirrel-reaction-short.gif",
   "./icons/icon-512.png",
   "./icons/icon-maskable-512.png",
   "./icons/apple-touch-icon.png",
