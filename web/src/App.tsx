@@ -278,6 +278,11 @@ const AuthScreen = ({ onReady }: { onReady: (session: Session) => void }) => {
 
 export const App = () => {
   const [session, setSession] = useState<Session | null | undefined>(cloudMode ? undefined : null);
+  const [minimumLoadingDone, setMinimumLoadingDone] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setMinimumLoadingDone(true), 900);
+    return () => window.clearTimeout(timer);
+  }, []);
   const [tab, setTab] = useState<Tab>("write");
   const [text, setText] = useState("");
   const [saving, setSaving] = useState(false);
@@ -766,7 +771,7 @@ export const App = () => {
     return "ことばの保管庫";
   }, [tab]);
 
-  if (session === undefined) {
+  if (session === undefined || !minimumLoadingDone) {
     return <main className="loading-screen"><AnimatedMascot className="brand-mascot" /></main>;
   }
   if (cloudMode && !session) return <AuthScreen onReady={setSession} />;
