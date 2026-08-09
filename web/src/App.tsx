@@ -645,6 +645,7 @@ export const App = () => {
         return;
       }
       await refreshDoLater();
+      triggerReaction();
     } catch {
       setNotice("今は変更できませんでした。元のメモは変わっていません。");
     }
