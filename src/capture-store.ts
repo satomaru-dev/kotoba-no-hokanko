@@ -28,6 +28,7 @@ export interface DoLaterItem {
   status: DoLaterStatus;
   activated_at: string;
   deferred_at: string | null;
+  bottom_order: number | null;
   updated_at: string;
   resolved_at: string | null;
   first_step: string | null;
@@ -41,6 +42,7 @@ interface StoredDoLaterItem {
   status: DoLaterStatus;
   activated_at: string;
   deferred_at: string | null;
+  bottom_order: number | null;
   updated_at: string;
   resolved_at: string | null;
   first_step: string | null;
@@ -96,6 +98,7 @@ export class CaptureStore {
       this.searchInsights = new Map(searchInsights.map((item) => [item.text, item]));
       this.doLater = new Map(doLater.map((item) => [item.memo_id, {
         deferred_at: null,
+        bottom_order: null,
         first_step: null,
         launch_url: null,
         roulette_enabled: false,
@@ -211,6 +214,10 @@ export class CaptureStore {
       .filter((item) => item.memo && !item.memo.deleted_at)
       .sort((left, right) => {
         if (view === "active") {
+          const leftBottom = left.bottom_order !== null;
+          const rightBottom = right.bottom_order !== null;
+          if (leftBottom !== rightBottom) return leftBottom ? 1 : -1;
+          if (leftBottom && rightBottom) return (left.bottom_order ?? 0) - (right.bottom_order ?? 0);
           return right.activated_at.localeCompare(left.activated_at);
         }
         const leftDate = left.resolved_at ?? left.updated_at;
@@ -226,6 +233,7 @@ export class CaptureStore {
     const item: StoredDoLaterItem = {
       ...(previous ?? {
         deferred_at: null,
+        bottom_order: null,
         first_step: null,
         launch_url: null,
         roulette_enabled: false
@@ -234,6 +242,7 @@ export class CaptureStore {
       status: "active",
       activated_at: now,
       deferred_at: null,
+      bottom_order: null,
       updated_at: now,
       resolved_at: null
     };
@@ -258,8 +267,9 @@ export class CaptureStore {
     const item: StoredDoLaterItem = {
       ...current,
       status,
-      activated_at: action === "later" ? now : current.activated_at,
+      activated_at: current.activated_at,
       deferred_at: action === "later" ? now : current.deferred_at,
+      bottom_order: action === "later" ? Date.parse(now) : current.bottom_order,
       updated_at: now,
       resolved_at: status === "active" ? null : now
     };

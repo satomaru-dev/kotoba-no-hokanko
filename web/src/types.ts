@@ -105,6 +105,7 @@ export interface DoLaterItem {
   status: DoLaterStatus;
   activated_at: string;
   deferred_at: string | null;
+  bottom_order: number | null;
   updated_at: string;
   resolved_at: string | null;
   first_step: string | null;

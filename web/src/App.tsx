@@ -598,11 +598,24 @@ export const App = () => {
     }
   };
 
+  const moveDoLaterToBottom = (memoId: string) => {
+    setDoLaterActive((current) => {
+      const target = current.find((item) => item.memo_id === memoId);
+      if (!target) return current;
+      const remaining = current.filter((item) => item.memo_id !== memoId);
+      return [...remaining, target];
+    });
+  };
+
   const actOnDoLater = async (memoId: string, action: DoLaterAction) => {
     try {
       await updateDoLater(memoId, action);
+      if (action === "later") {
+        moveDoLaterToBottom(memoId);
+        setNotice("一覧の末尾へ移しました。");
+        return;
+      }
       await refreshDoLater();
-      if (action === "later") setNotice("一覧の末尾へ移しました。");
     } catch {
       setNotice("今は変更できませんでした。元のメモは変わっていません。");
     }

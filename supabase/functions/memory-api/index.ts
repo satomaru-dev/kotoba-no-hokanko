@@ -110,12 +110,10 @@ const titleFromText = (text: string): string => {
 };
 
 const inferRelation = (semantic: number, lexical: number, excerpt: string): string => {
-  if (/続かな|やめた|諦め|放置|使わなく|無理だった|残らなかった/.test(excerpt)) {
-    return "試したが残らなかった";
-  }
-  if (/以前は|当時は|今は|変わった|考え直|もう違う/.test(excerpt)) return "以前と変化";
-  if (lexical >= 0.3 || semantic >= 0.68) return "同じ悩み・発想";
-  return "組み合わせ可能";
+  if (/tried|failed|stopped/.test(excerpt)) return 'tried';
+  if (/before|changed|different/.test(excerpt)) return 'changed';
+  if (lexical >= 0.3 || semantic >= 0.68) return 'similar';
+  return 'possible';
 };
 
 const sensitiveImport = (sourceUri: string, text: string): boolean =>
@@ -331,15 +329,12 @@ const loadDoLaterItems = async (
   let query = admin.from("memo_later_items").select("*").eq("owner_id", ownerId);
   query = view === "active"
     ? query.eq("status", "active")
-
+      .order("bottom_order", { ascending: true, nullsFirst: true })
+      .order("activated_at", { ascending: false })
     : query.in("status", ["done", "abandoned"]).order("resolved_at", { ascending: false });
   const { data: rawItems, error } = await query.limit(100);
   if (error) throw error;
-  const items = [...(rawItems ?? [])].sort((left, right) =>
-    view === "active"
-      ? right.activated_at.localeCompare(left.activated_at)
-      : (right.resolved_at ?? right.updated_at).localeCompare(left.resolved_at ?? left.updated_at)
-  );
+  const items = rawItems ?? [];
   const memoIds = items.map((item) => item.memo_id);
   const { data: memoRows, error: memoError } = memoIds.length === 0
     ? { data: [], error: null }
@@ -356,6 +351,7 @@ const loadDoLaterItems = async (
       status: item.status,
       activated_at: item.activated_at,
       deferred_at: item.deferred_at ?? null,
+      bottom_order: item.bottom_order ?? null,
       updated_at: item.updated_at,
       resolved_at: item.resolved_at,
       first_step: item.first_step_ciphertext ? await decrypt(item.first_step_ciphertext) : null,
@@ -479,7 +475,7 @@ const dispatchReminders = async (admin: AdminClient, ownerId: string) => {
     if (!memo) continue;
     const text = (await decrypt(memo.current_ciphertext)).replace(/\s+/g, " ").trim();
     const payload = JSON.stringify({
-      title: "もう一度考えたかった言葉があります",
+      title: 'A thought to revisit',
       body: text.slice(0, 60),
       memo_id: memo.id,
       reminder_id: reminder.id,
@@ -890,11 +886,11 @@ if (route === "/search" && request.method === "POST") {
         if (currentError) throw currentError;
         const result = current
           ? await admin.from("memo_later_items").update({
-              status: "active", activated_at: now, deferred_at: null, updated_at: now, resolved_at: null
+              status: "active", activated_at: now, deferred_at: null, bottom_order: null, updated_at: now, resolved_at: null
             }).eq("memo_id", memoId).eq("owner_id", ownerId)
           : await admin.from("memo_later_items").insert({
               memo_id: memoId, owner_id: ownerId, status: "active",
-              activated_at: now, deferred_at: null, updated_at: now, resolved_at: null,
+              activated_at: now, deferred_at: null, bottom_order: null, updated_at: now, resolved_at: null,
               roulette_enabled: false
             });
         if (result.error) throw result.error;
@@ -902,7 +898,7 @@ if (route === "/search" && request.method === "POST") {
       }
       if (request.method === "PATCH") {
         const { data: current, error: currentError } = await admin.from("memo_later_items")
-          .select("memo_id,activated_at,deferred_at").eq("memo_id", memoId).eq("owner_id", ownerId).maybeSingle();
+          .select("memo_id,activated_at,deferred_at,bottom_order").eq("memo_id", memoId).eq("owner_id", ownerId).maybeSingle();
         if (currentError) throw currentError;
         if (!current) return json({ error: "not_found" }, 404);
         const body = await request.json();
@@ -933,8 +929,9 @@ if (route === "/search" && request.method === "POST") {
         const status = action === "done" ? "done" : action === "abandon" ? "abandoned" : "active";
         const updates = {
           status,
-          activated_at: action === "later" ? now : current.activated_at,
+          activated_at: current.activated_at,
           deferred_at: action === "later" ? now : current.deferred_at,
+          bottom_order: action === "later" ? Date.parse(now) : current.bottom_order,
           updated_at: now,
           resolved_at: status === "active" ? null : now
         };
