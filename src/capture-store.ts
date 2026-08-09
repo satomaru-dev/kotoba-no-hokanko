@@ -166,8 +166,12 @@ export class CaptureStore {
   }
 
   list(deleted = false): CapturedMemo[] {
+    const activeAttention = new Map([...this.doLater.values()]
+      .filter((item) => item.status === "active")
+      .map((item) => [item.memo_id, item.attention_level]));
     return [...this.memos.values()]
       .filter((memo) => deleted ? Boolean(memo.deleted_at) : !memo.deleted_at)
+      .map((memo) => ({ ...memo, attention_level: activeAttention.get(memo.id) ?? null }))
       .sort((left, right) => right.captured_at.localeCompare(left.captured_at));
   }
 

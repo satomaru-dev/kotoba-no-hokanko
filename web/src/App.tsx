@@ -422,7 +422,7 @@ export const App = () => {
         listDoLater("active"),
         listDoLater("resolved")
       ]);
-      setDoLaterActive(active);
+      setDoLaterActive(active.filter((item) => item.attention_level === "do_later"));
       setDoLaterResolved(resolved);
       if (!cloudMode) {
         const all = [...active, ...resolved];
@@ -589,7 +589,7 @@ export const App = () => {
     try {
       await addDoLater(lastSavedMemo.id, attentionLevel);
       if (attentionLevel === "do_later") setLastSavedMarked(true);
-      await refreshDoLater();
+      await Promise.all([refreshDoLater(), refreshMemos()]);
       setShowReminder(false);
       setNotice("この言葉の置き場所を決めました。");
       triggerReaction();
@@ -613,7 +613,7 @@ export const App = () => {
     try {
       await addDoLater(memo.id);
       if (lastSavedMemo?.id === memo.id) setLastSavedMarked(true);
-      await refreshDoLater();
+      await Promise.all([refreshDoLater(), refreshMemos()]);
       setNotice("「あとでやる」に置きました。");
       triggerReaction();
     } catch {
@@ -624,7 +624,7 @@ export const App = () => {
   const setAttentionForMemo = async (memo: Memo, attentionLevel: AttentionLevel) => {
     try {
       await addDoLater(memo.id, attentionLevel);
-      await refreshDoLater();
+      await Promise.all([refreshDoLater(), refreshMemos()]);
       setNotice("重要度を変えました。");
       triggerReaction();
     } catch {
@@ -787,6 +787,11 @@ export const App = () => {
     crypto.getRandomValues(random);
     openDoLater(candidates[random[0]! % candidates.length]!);
   };
+
+  const recentSource = showTrash ? trash : memos;
+  const recentKeepInMind = recentSource.filter((memo) => memo.attention_level === "keep_in_mind");
+  const recentImportant = recentSource.filter((memo) => memo.attention_level === "important_insight");
+  const recentOther = recentSource.filter((memo) => memo.attention_level !== "keep_in_mind" && memo.attention_level !== "important_insight" && memo.attention_level !== "do_later");
 
   const navTitle = useMemo(() => {
     if (tab === "do-later") return "あとでやる";
@@ -1037,19 +1042,24 @@ export const App = () => {
 
 {tab === "recent" && (
           <section className="recent-panel">
-            <div className="memo-list">
-              {(showTrash ? trash : memos).map((memo) => (
-                <button className="memo-row" key={memo.id} onClick={() => setSelected(memo)}>
-                  <time>{formatRelativeDate(memo.captured_at)}</time>
-                  <span>{memo.current_text}</span>
-                </button>
-              ))}
-              {(showTrash ? trash : memos).length === 0 && (
-                <p className="empty-message">
-                  {showTrash ? "ゴミ箱は空です。" : "ここに、残した言葉が並びます。"}
-                </p>
-              )}
-            </div>
+            {showTrash ? (
+              <div className="memo-list">
+                {trash.map((memo) => (
+                  <button className="memo-row" key={memo.id} onClick={() => setSelected(memo)}>
+                    <time>{formatRelativeDate(memo.captured_at)}</time>
+                    <span>{memo.current_text}</span>
+                  </button>
+                ))}
+                {trash.length === 0 && <p className="empty-message">ゴミ箱は空です。</p>}
+              </div>
+            ) : (
+              <>
+                {recentKeepInMind.length > 0 && <section className="recent-group"><h2 className="recent-group-title">しばらく意識しておきたい</h2><div className="memo-list">{recentKeepInMind.map((memo) => <button className="memo-row" key={memo.id} onClick={() => setSelected(memo)}><time>{formatRelativeDate(memo.captured_at)}</time><span>{memo.current_text}</span></button>)}</div></section>}
+                {recentImportant.length > 0 && <section className="recent-group"><h2 className="recent-group-title">今の自分にとって結構重要な気づき</h2><div className="memo-list">{recentImportant.map((memo) => <button className="memo-row" key={memo.id} onClick={() => setSelected(memo)}><time>{formatRelativeDate(memo.captured_at)}</time><span>{memo.current_text}</span></button>)}</div></section>}
+                {recentOther.length > 0 && <section className="recent-group"><h2 className="recent-group-title">その他のアイデア</h2><div className="memo-list">{recentOther.map((memo) => <button className="memo-row" key={memo.id} onClick={() => setSelected(memo)}><time>{formatRelativeDate(memo.captured_at)}</time><span>{memo.current_text}</span></button>)}</div></section>}
+                {recentKeepInMind.length === 0 && recentImportant.length === 0 && recentOther.length === 0 && <p className="empty-message">ここに、残した言葉が並びます。</p>}
+              </>
+            )}
           </section>
         )}
       </main>

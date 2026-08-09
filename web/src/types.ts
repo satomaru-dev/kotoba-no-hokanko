@@ -33,6 +33,7 @@ export interface Memo {
   updated_at: string;
   deleted_at: string | null;
   revisions: MemoRevision[];
+  attention_level?: AttentionLevel | null;
 }
 
 export interface CaptureInput {

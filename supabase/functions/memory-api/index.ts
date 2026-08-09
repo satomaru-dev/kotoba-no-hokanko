@@ -334,7 +334,8 @@ const loadDoLaterItems = async (
     : query.in("status", ["done", "abandoned"]).order("resolved_at", { ascending: false });
   const { data: rawItems, error } = await query.limit(100);
   if (error) throw error;
-  const items = [...(rawItems ?? [])].sort((left, right) => {
+  const items = [...(rawItems ?? [])]
+    .sort((left, right) => {
     if (view !== "active") return (right.resolved_at ?? right.updated_at).localeCompare(left.resolved_at ?? left.updated_at);
     const rank = { do_later: 1, keep_in_mind: 2, important_insight: 3 } as Record<string, number>;
     const leftRank = rank[left.attention_level] ?? 1;
@@ -871,7 +872,16 @@ if (route === "/search" && request.method === "POST") {
       query = deleted ? query.not("deleted_at", "is", null) : query.is("deleted_at", null);
       const { data, error } = await query.order("captured_at", { ascending: false }).limit(50);
       if (error) throw error;
-      return json({ memos: await decryptMemos(admin, ownerId, data ?? []), next_cursor: null });
+      const rows = data ?? [];
+      const activeIds = rows.map((row) => row.id);
+      const { data: attentionRows, error: attentionError } = activeIds.length === 0
+        ? { data: [], error: null }
+        : await admin.from("memo_later_items").select("memo_id,attention_level")
+          .eq("owner_id", ownerId).eq("status", "active").in("memo_id", activeIds);
+      if (attentionError) throw attentionError;
+      const attention = new Map((attentionRows ?? []).map((row) => [row.memo_id, row.attention_level ?? "do_later"]));
+      const decrypted = await decryptMemos(admin, ownerId, rows);
+      return json({ memos: decrypted.map((memo) => ({ ...memo, attention_level: attention.get(memo.id) ?? null })), next_cursor: null });
     }
 
     if (route === "/do-later" && request.method === "GET") {
