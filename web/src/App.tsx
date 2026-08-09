@@ -217,6 +217,13 @@ const RelatedCards = ({
   );
 };
 
+const AnimatedMascot = ({ className }: { className: string }) => (
+  <picture>
+    <source media="(prefers-reduced-motion: reduce)" srcSet="./icons/icon-192.png" />
+    <img className={className} src="./animations/squirrel-animation-12fps.gif" alt="" aria-hidden="true" />
+  </picture>
+);
+
 const AuthScreen = ({ onReady }: { onReady: (session: Session) => void }) => {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
@@ -242,7 +249,7 @@ const AuthScreen = ({ onReady }: { onReady: (session: Session) => void }) => {
   }, [onReady]);
   return (
     <main className="auth-shell">
-      <img className="brand-mascot" src="./icons/icon-192.png" alt="" aria-hidden="true" />
+      <AnimatedMascot className="brand-mascot" />
       <p className="eyebrow">ことばの保管庫</p>
       <h1>自分の言葉に、<br />帰ってこられる場所。</h1>
       {sent ? (
@@ -760,7 +767,7 @@ export const App = () => {
   }, [tab]);
 
   if (session === undefined) {
-    return <main className="loading-screen"><img className="brand-mascot" src="./icons/icon-192.png" alt="" aria-hidden="true" /></main>;
+    return <main className="loading-screen"><AnimatedMascot className="brand-mascot" /></main>;
   }
   if (cloudMode && !session) return <AuthScreen onReady={setSession} />;
 
