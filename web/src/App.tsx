@@ -280,7 +280,7 @@ export const App = () => {
   const [session, setSession] = useState<Session | null | undefined>(cloudMode ? undefined : null);
   const [minimumLoadingDone, setMinimumLoadingDone] = useState(false);
   useEffect(() => {
-    const timer = window.setTimeout(() => setMinimumLoadingDone(true), 900);
+    const timer = window.setTimeout(() => setMinimumLoadingDone(true), 2600);
     return () => window.clearTimeout(timer);
   }, []);
   const [tab, setTab] = useState<Tab>("write");
