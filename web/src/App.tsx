@@ -1071,11 +1071,11 @@ export const App = () => {
         <button className={tab === "do-later" ? "active" : ""} onClick={() => setTab("do-later")}>
           <span className="nav-icon"><NavIcon kind="later" /></span><span>あとでやる</span>
         </button>
-        <button className={tab === "search" ? "active" : ""} onClick={() => setTab("search")}>
-          <span className="nav-icon"><NavIcon kind="search" /></span><span>さがす</span>
-        </button>
         <button className={tab === "recent" ? "active" : ""} onClick={() => setTab("recent")}>
           <span className="nav-icon"><NavIcon kind="recent" /></span><span>最近</span>
+        </button>
+        <button className={tab === "search" ? "active" : ""} onClick={() => setTab("search")}>
+          <span className="nav-icon"><NavIcon kind="search" /></span><span>さがす</span>
         </button>
       </nav>
 
