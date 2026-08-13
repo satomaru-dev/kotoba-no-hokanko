@@ -189,6 +189,14 @@ export const updateDoLater = async (
   return result.item;
 };
 
+export const reorderDoLater = async (memoId: string, order: string[]): Promise<DoLaterItem> => {
+  const result = await request<{ item: DoLaterItem }>(`/memos/${memoId}/do-later`, {
+    method: "PATCH",
+    body: JSON.stringify({ order })
+  });
+  return result.item;
+};
+
 export const updateDoLaterAttention = async (memoId: string, attentionLevel: AttentionLevel): Promise<DoLaterItem> => {
   const result = await request<{ item: DoLaterItem }>(`/memos/${memoId}/do-later`, {
     method: "PATCH",

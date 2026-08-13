@@ -32,6 +32,7 @@ import {
   unlinkWorkspace,
   updateDoLater,
   updateDoLaterAttention,
+  reorderDoLater,
   updateMemo
 } from "./api";
 import {
@@ -310,6 +311,8 @@ export const App = () => {
   const [trash, setTrash] = useState<Memo[]>([]);
   const [doLaterActive, setDoLaterActive] = useState<DoLaterItem[]>([]);
   const [doLaterResolved, setDoLaterResolved] = useState<DoLaterItem[]>([]);
+  const [draggingMemoId, setDraggingMemoId] = useState<string | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [showDoLaterHistory, setShowDoLaterHistory] = useState(false);
   const [setupItem, setSetupItem] = useState<DoLaterItem | null>(null);
   const [workspaceItem, setWorkspaceItem] = useState<DoLaterItem | null>(null);
@@ -325,6 +328,9 @@ export const App = () => {
   const [reactionVisible, setReactionVisible] = useState(false);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const saveMessage = useRef<HTMLDivElement>(null);
+  const reorderTimer = useRef<number | null>(null);
+  const reorderStart = useRef<{ id: string; x: number; y: number } | null>(null);
+  const suppressNextOpen = useRef(false);
 
   const triggerReaction = () => {
     setReactionVisible(true);
@@ -657,6 +663,72 @@ export const App = () => {
     }
   };
 
+  const clearReorderTimer = () => {
+    if (reorderTimer.current !== null) window.clearTimeout(reorderTimer.current);
+    reorderTimer.current = null;
+  };
+
+  const handleDoLaterPointerDown = (event: React.PointerEvent<HTMLButtonElement>, item: DoLaterItem) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    clearReorderTimer();
+    reorderStart.current = { id: item.memo_id, x: event.clientX, y: event.clientY };
+    const pointerTarget = event.currentTarget;
+    reorderTimer.current = window.setTimeout(() => {
+      setDraggingMemoId(item.memo_id);
+      setDragOverIndex(doLaterActive.findIndex((entry) => entry.memo_id === item.memo_id));
+      suppressNextOpen.current = true;
+      pointerTarget.setPointerCapture(event.pointerId);
+      reorderTimer.current = null;
+    }, 500);
+  };
+
+  const handleDoLaterPointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const start = reorderStart.current;
+    if (!start) return;
+    const distance = Math.hypot(event.clientX - start.x, event.clientY - start.y);
+    if (!draggingMemoId && distance > 8) {
+      clearReorderTimer();
+      reorderStart.current = null;
+      return;
+    }
+    if (!draggingMemoId) return;
+    event.preventDefault();
+    const cards = [...document.querySelectorAll<HTMLElement>("[data-do-later-id]")]
+      .filter((card) => card.dataset.doLaterId !== draggingMemoId);
+    let index = cards.length;
+    cards.some((card, cardIndex) => {
+      const rect = card.getBoundingClientRect();
+      if (event.clientY < rect.top + rect.height / 2) { index = cardIndex; return true; }
+      return false;
+    });
+    setDragOverIndex(index);
+  };
+
+  const finishDoLaterReorder = async () => {
+    clearReorderTimer();
+    const id = draggingMemoId;
+    const targetIndex = dragOverIndex;
+    reorderStart.current = null;
+    setDraggingMemoId(null);
+    setDragOverIndex(null);
+    if (!id || targetIndex === null) return;
+    const previous = doLaterActive;
+    const remaining = previous.filter((item) => item.memo_id !== id);
+    const target = previous.find((item) => item.memo_id === id);
+    if (!target) return;
+    const next = [...remaining];
+    next.splice(Math.min(targetIndex, next.length), 0, target);
+    if (next.every((item, index) => item.memo_id === previous[index]?.memo_id)) return;
+    setDoLaterActive(next);
+    try {
+      await reorderDoLater(id, next.map((item) => item.memo_id));
+      setNotice("配置を変えました。");
+    } catch {
+      setDoLaterActive(previous);
+      setNotice("配置を保存できませんでした。元の順番に戻しました。");
+    }
+  };
+
   const configureItem = async (item: DoLaterItem, configuration: {
     first_step: string | null;
     launch_url: string | null;
@@ -924,8 +996,15 @@ export const App = () => {
             <p className="do-later-intro">行動につながりそうな言葉を、ここでもう一度。</p>
             <div className="do-later-list">
               {doLaterActive.map((item) => (
-                <article className="do-later-card" key={item.memo_id}>
-                  <button className="do-later-main" onClick={() => openDoLater(item)}>
+                <article className={`do-later-card ${draggingMemoId === item.memo_id ? "is-dragging" : ""} ${dragOverIndex === doLaterActive.filter((entry) => entry.memo_id !== draggingMemoId).findIndex((entry) => entry.memo_id === item.memo_id) ? "is-drop-target" : ""}`} data-do-later-id={item.memo_id} key={item.memo_id}>
+                  <button
+                    className="do-later-main"
+                    type="button"
+                    onPointerDown={(event) => handleDoLaterPointerDown(event, item)}
+                    onPointerMove={handleDoLaterPointerMove}
+                    onPointerUp={() => void finishDoLaterReorder()}
+                    onPointerCancel={() => { clearReorderTimer(); reorderStart.current = null; suppressNextOpen.current = false; setDraggingMemoId(null); setDragOverIndex(null); }}
+                    onClick={(event) => { if (suppressNextOpen.current) { suppressNextOpen.current = false; event.preventDefault(); return; } openDoLater(item); }}>
                     <time>{formatRelativeDate(item.memo.captured_at)}</time>
 
                     {START_ASSIST_BETA && item.first_step && (

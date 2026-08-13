@@ -108,6 +108,7 @@ export interface DoLaterItem {
   activated_at: string;
   deferred_at: string | null;
   bottom_order: number | null;
+  manual_order: number | null;
   attention_level: AttentionLevel;
   updated_at: string;
   resolved_at: string | null;

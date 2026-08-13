@@ -134,6 +134,15 @@ describe("capture store", () => {
     expect(store.listDoLater("active").map((item) => item.memo_id)).toEqual([ids[2], ids[1], ids[0]]);
   });
 
+  it("reorders active do-later items and preserves the order", async () => {
+    const { store } = await makeStore();
+    const ids = ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3"];
+    for (const [index, id] of ids.entries()) await store.capture(id, id, "2026-08-01T0" + index + ":00:00.000Z");
+    for (const id of ids) await store.addDoLater(id, "do_later");
+    expect(await store.reorderDoLater([ids[2]!, ids[0]!, ids[1]!])).not.toBeNull();
+    expect(store.listDoLater("active").map((item) => item.memo_id)).toEqual([ids[2], ids[0], ids[1]]);
+  });
+
   it("records normalized search insights without changing memo data", async () => {
     const { store } = await makeStore();
     const first = await store.recordSearch("  アイデア   探索 ");

@@ -162,6 +162,20 @@ app.post("/api/memos/:id/do-later", async (request: Request, response: Response,
 
 app.patch("/api/memos/:id/do-later", async (request: Request, response: Response, next: NextFunction) => {
   try {
+    const body = request.body as { order?: unknown };
+    if (body.order !== undefined) {
+      const ids = Array.isArray(body.order) ? body.order.map((value) => String(value)) : [];
+      const items = await captures.reorderDoLater(ids);
+      if (!items) { response.status(400).json({ error: "invalid_request" }); return; }
+      response.json({ item: items.find((item) => item.memo_id === String(request.params.id ?? "")) ?? items[0] });
+      return;
+    }
+    next();
+  } catch (error) { next(error); }
+});
+
+app.patch("/api/memos/:id/do-later", async (request: Request, response: Response, next: NextFunction) => {
+  try {
     const body = request.body as { action?: string; configuration?: unknown; attention_level?: string };
     const id = String(request.params.id ?? "");
     const item = body.attention_level !== undefined

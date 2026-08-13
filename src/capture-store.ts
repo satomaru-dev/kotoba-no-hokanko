@@ -30,6 +30,7 @@ export interface DoLaterItem {
   activated_at: string;
   deferred_at: string | null;
   bottom_order: number | null;
+  manual_order: number | null;
   attention_level: AttentionLevel;
   updated_at: string;
   resolved_at: string | null;
@@ -45,6 +46,7 @@ interface StoredDoLaterItem {
   activated_at: string;
   deferred_at: string | null;
   bottom_order: number | null;
+  manual_order: number | null;
   attention_level: AttentionLevel;
   updated_at: string;
   resolved_at: string | null;
@@ -102,6 +104,7 @@ export class CaptureStore {
       this.doLater = new Map(doLater.map((item) => [item.memo_id, {
         deferred_at: null,
         bottom_order: null,
+        manual_order: null,
         attention_level: "do_later",
         first_step: null,
         launch_url: null,
@@ -226,6 +229,10 @@ export class CaptureStore {
           const leftRank = rank[left.attention_level] ?? 1;
           const rightRank = rank[right.attention_level] ?? 1;
           if (leftRank !== rightRank) return rightRank - leftRank;
+          const leftManual = left.manual_order !== null;
+          const rightManual = right.manual_order !== null;
+          if (leftManual !== rightManual) return leftManual ? 1 : -1;
+          if (leftManual && rightManual) return (left.manual_order ?? 0) - (right.manual_order ?? 0);
           const leftBottom = left.bottom_order !== null;
           const rightBottom = right.bottom_order !== null;
           if (leftBottom !== rightBottom) return leftBottom ? 1 : -1;
@@ -249,6 +256,7 @@ export class CaptureStore {
       ...(previous ?? {
         deferred_at: null,
         bottom_order: null,
+        manual_order: null,
         attention_level: "do_later",
         first_step: null,
         launch_url: null,
@@ -259,6 +267,7 @@ export class CaptureStore {
       activated_at: now,
       deferred_at: null,
       bottom_order: null,
+      manual_order: null,
       attention_level: attentionLevel,
       updated_at: now,
       resolved_at: null
@@ -297,12 +306,25 @@ export class CaptureStore {
       activated_at: current.activated_at,
       deferred_at: action === "later" ? now : current.deferred_at,
       bottom_order: action === "later" ? Date.parse(now) : current.bottom_order,
+      manual_order: action === "later" ? Math.max(-1, ...[...this.doLater.values()].filter((item) => item.status === "active" && item.attention_level === "do_later" && item.memo_id !== id).map((item) => item.manual_order ?? -1)) + 1 : current.manual_order,
       updated_at: now,
       resolved_at: status === "active" ? null : now
     };
     this.doLater.set(id, item);
     await this.persist();
     return { ...item, memo };
+  }
+
+  async reorderDoLater(ids: string[], now = new Date().toISOString()): Promise<DoLaterItem[] | null> {
+    const active = [...this.doLater.values()].filter((item) => item.status === "active" && item.attention_level === "do_later");
+    const allowed = new Set(active.map((item) => item.memo_id));
+    if (ids.length !== allowed.size || new Set(ids).size !== ids.length || ids.some((id) => !allowed.has(id))) return null;
+    ids.forEach((id, index) => {
+      const item = this.doLater.get(id)!;
+      this.doLater.set(id, { ...item, manual_order: index + 1, updated_at: now });
+    });
+    await this.persist();
+    return this.listDoLater("active");
   }
 
   async configureDoLater(

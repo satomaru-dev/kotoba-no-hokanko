@@ -281,3 +281,7 @@ button:disabled { cursor: default; }
 .attention-options button { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--ink); text-align: left; }
 .attention-options button:hover { border-color: var(--accent); background: var(--primary-bg); }
 .attention-options small { color: var(--muted); font-size: 11px; }
+
+.do-later-main { touch-action: pan-y; user-select: none; }
+.do-later-card.is-dragging { opacity: .72; transform: scale(.985); box-shadow: 0 6px 18px rgba(80,55,25,.18); }
+.do-later-card.is-drop-target { outline: 2px solid var(--primary); outline-offset: 3px; }

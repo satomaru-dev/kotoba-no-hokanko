@@ -329,6 +329,7 @@ const loadDoLaterItems = async (
   let query = admin.from("memo_later_items").select("*").eq("owner_id", ownerId);
   query = view === "active"
     ? query.eq("status", "active")
+      .order("manual_order", { ascending: true, nullsFirst: true })
       .order("bottom_order", { ascending: true, nullsFirst: true })
       .order("activated_at", { ascending: false })
     : query.in("status", ["done", "abandoned"]).order("resolved_at", { ascending: false });
@@ -341,6 +342,10 @@ const loadDoLaterItems = async (
     const leftRank = rank[left.attention_level] ?? 1;
     const rightRank = rank[right.attention_level] ?? 1;
     if (leftRank !== rightRank) return rightRank - leftRank;
+    const leftManual = left.manual_order !== null;
+    const rightManual = right.manual_order !== null;
+    if (leftManual !== rightManual) return leftManual ? 1 : -1;
+    if (leftManual && rightManual) return Number(left.manual_order ?? 0) - Number(right.manual_order ?? 0);
     const leftBottom = left.bottom_order !== null;
     const rightBottom = right.bottom_order !== null;
     if (leftBottom !== rightBottom) return leftBottom ? 1 : -1;
@@ -911,11 +916,11 @@ if (route === "/search" && request.method === "POST") {
         if (currentError) throw currentError;
         const result = current
           ? await admin.from("memo_later_items").update({
-              status: "active", activated_at: now, deferred_at: null, bottom_order: null, attention_level: attentionLevel, updated_at: now, resolved_at: null
+              status: "active", activated_at: now, deferred_at: null, bottom_order: null, manual_order: null, attention_level: attentionLevel, updated_at: now, resolved_at: null
             }).eq("memo_id", memoId).eq("owner_id", ownerId)
           : await admin.from("memo_later_items").insert({
               memo_id: memoId, owner_id: ownerId, status: "active",
-              activated_at: now, deferred_at: null, bottom_order: null, attention_level: attentionLevel, updated_at: now, resolved_at: null,
+              activated_at: now, deferred_at: null, bottom_order: null, manual_order: null, attention_level: attentionLevel, updated_at: now, resolved_at: null,
               roulette_enabled: false
             });
         if (result.error) throw result.error;
@@ -923,10 +928,23 @@ if (route === "/search" && request.method === "POST") {
       }
       if (request.method === "PATCH") {
         const { data: current, error: currentError } = await admin.from("memo_later_items")
-          .select("memo_id,activated_at,deferred_at,bottom_order,attention_level").eq("memo_id", memoId).eq("owner_id", ownerId).maybeSingle();
+          .select("memo_id,activated_at,deferred_at,bottom_order,manual_order,attention_level").eq("memo_id", memoId).eq("owner_id", ownerId).maybeSingle();
         if (currentError) throw currentError;
         if (!current) return json({ error: "not_found" }, 404);
         const body = await request.json();
+        if (body.order !== undefined) {
+          const ids = Array.isArray(body.order) ? body.order.map((value: unknown) => String(value)) : [];
+          const { data: activeRows, error: activeError } = await admin.from("memo_later_items")
+            .select("memo_id").eq("owner_id", ownerId).eq("status", "active").eq("attention_level", "do_later");
+          if (activeError) throw activeError;
+          const allowed = new Set((activeRows ?? []).map((row) => row.memo_id));
+          if (ids.length !== allowed.size || new Set(ids).size !== ids.length || ids.some((id: string) => !allowed.has(id))) return json({ error: "invalid_request" }, 400);
+          for (const [index, id] of ids.entries()) {
+            const { error } = await admin.from("memo_later_items").update({ manual_order: index + 1, updated_at: now }).eq("memo_id", id).eq("owner_id", ownerId);
+            if (error) throw error;
+          }
+          return json({ item: await loadDoLaterItem(admin, ownerId, memoId) });
+        }
         if (body.attention_level !== undefined) {
           const attentionLevel = String(body.attention_level);
           if (!["do_later", "keep_in_mind", "important_insight"].includes(attentionLevel)) return json({ error: "invalid_request" }, 400);
@@ -965,6 +983,7 @@ if (route === "/search" && request.method === "POST") {
           activated_at: current.activated_at,
           deferred_at: action === "later" ? now : current.deferred_at,
           bottom_order: action === "later" ? Date.parse(now) : current.bottom_order,
+          manual_order: action === "later" ? Date.parse(now) : current.manual_order,
           updated_at: now,
           resolved_at: status === "active" ? null : now
         };
