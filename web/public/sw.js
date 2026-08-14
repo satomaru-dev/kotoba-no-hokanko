@@ -1,4 +1,4 @@
-const CACHE = "kotoba-shell-v5";
+const CACHE = "kotoba-shell-v6";
 const SHELL = [
   "./",
   "./manifest.webmanifest",
@@ -25,7 +25,8 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET" || new URL(event.request.url).pathname.startsWith("/api/")) return;
+  const pathname = new URL(event.request.url).pathname;
+  if (event.request.method !== "GET" || pathname.startsWith("/api/") || pathname.includes("/functions/v1/memory-api")) return;
   event.respondWith(
     fetch(event.request)
       .then((response) => {

@@ -41,7 +41,7 @@ const request = async <T>(
     headers.set("Authorization", `Bearer ${active.access_token}`);
     headers.set("apikey", supabaseAnonKey!);
   }
-  const response = await fetch(`${edgeBase}${path}`, { ...init, headers });
+  const response = await fetch(`${edgeBase}${path}`, { cache: init.cache ?? "no-store", ...init, headers });
   if (!response.ok) {
     const body = await response.json().catch(() => ({})) as { error?: string };
     throw new Error(body.error || `通信に失敗しました (${response.status})`);
