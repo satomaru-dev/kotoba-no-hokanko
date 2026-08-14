@@ -26,7 +26,7 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const pathname = new URL(event.request.url).pathname;
-  if (event.request.method !== "GET" || pathname.startsWith("/api/") || pathname.includes("/functions/v1/memory-api")) return;
+  if (event.request.method !== "GET" || pathname.endsWith("/sw.js") || pathname.startsWith("/api/") || pathname.includes("/functions/v1/memory-api")) return;
   event.respondWith(
     fetch(event.request)
       .then((response) => {
