@@ -118,11 +118,12 @@ app.patch("/api/memos/:id", async (request: Request, response: Response, next: N
 
 app.delete("/api/memos/:id", async (request: Request, response: Response, next: NextFunction) => {
   try {
-    if (!await captures.trash(String(request.params.id ?? ""))) {
+    const id = String(request.params.id ?? "");
+    if (!await captures.trash(id)) {
       response.status(404).json({ error: "not_found" });
       return;
     }
-    response.status(204).end();
+    response.json({ memo: captures.get(id) });
   } catch (error) {
     next(error);
   }

@@ -47,6 +47,7 @@ import {
   removeQueuedCapture,
   removeQueuedReminder
 } from "./offline";
+import { mergeMemo, prependMemo, removeDoLaterMemo, removeMemo, replaceDoLaterMemo, replaceMemo } from "./memo-state";
 import type {
   AttentionLevel,
   CaptureInput,
@@ -339,6 +340,8 @@ export const App = () => {
   const [reactionVisible, setReactionVisible] = useState(false);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const saveMessage = useRef<HTMLDivElement>(null);
+  const memoRefreshRequest = useRef(0);
+  const memoStateGeneration = useRef(0);
 
   const triggerReaction = () => {
     setReactionVisible(true);
@@ -410,8 +413,13 @@ export const App = () => {
   }, [refreshPending, syncPending]);
 
   const refreshMemos = useCallback(async () => {
+    const requestId = ++memoRefreshRequest.current;
+    const generation = memoStateGeneration.current;
     try {
       const [active, deleted] = await Promise.all([listMemos(false), listMemos(true)]);
+      if (requestId !== memoRefreshRequest.current || generation !== memoStateGeneration.current) {
+        return [...active, ...deleted];
+      }
       setMemos(active);
       setTrash(deleted);
       return [...active, ...deleted];
@@ -419,6 +427,29 @@ export const App = () => {
       setNotice("記録を読み込めませんでした。通信が戻ったら、もう一度開いてください。");
       return [];
     }
+  }, []);
+
+  const applyMemoMutation = useCallback((kind: "updated" | "trashed" | "restored", updated: Memo, previous: Memo) => {
+    memoStateGeneration.current += 1;
+    memoRefreshRequest.current += 1;
+    const displayMemo = mergeMemo(previous, updated);
+
+    if (kind === "updated") {
+      setMemos((items) => replaceMemo(items, displayMemo));
+      setTrash((items) => replaceMemo(items, displayMemo));
+      setDoLaterActive((items) => replaceDoLaterMemo(items, displayMemo));
+      setDoLaterResolved((items) => replaceDoLaterMemo(items, displayMemo));
+    } else if (kind === "trashed") {
+      setMemos((items) => removeMemo(items, displayMemo.id));
+      setTrash((items) => prependMemo(items, displayMemo));
+      setDoLaterActive((items) => removeDoLaterMemo(items, displayMemo.id));
+      setDoLaterResolved((items) => removeDoLaterMemo(items, displayMemo.id));
+    } else {
+      setTrash((items) => removeMemo(items, displayMemo.id));
+      setMemos((items) => prependMemo(items, displayMemo));
+    }
+
+    setSelected(null);
   }, []);
 
   const refreshDueReminders = useCallback(async () => {
@@ -1145,10 +1176,8 @@ export const App = () => {
           onDialogue={DIALOGUE_BETA ? () => void beginThread(selected.id) : undefined}
           onDoLater={!selected.deleted_at ? () => void markDoLater(selected) : undefined}
           onAttention={!selected.deleted_at ? (level) => void setAttentionForMemo(selected, level) : undefined}
-          onChanged={async () => {
-            setSelected(null);
-            await refreshMemos();
-          }}
+          onChanged={(kind, memo) => applyMemoMutation(kind, memo, selected)}
+          onError={(message) => setNotice(message)}
         />
       )}
       {selectedMemory && (
@@ -1402,13 +1431,15 @@ const MemoDialog = ({
   memo,
   onClose,
   onChanged,
+  onError,
   onDialogue,
   onDoLater,
   onAttention
 }: {
   memo: Memo;
   onClose: () => void;
-  onChanged: () => Promise<void>;
+  onChanged: (kind: "updated" | "trashed" | "restored", memo: Memo) => void;
+  onError: (message: string) => void;
   onDialogue?: () => void;
   onDoLater?: () => void;
   onAttention?: (level: AttentionLevel) => void;
@@ -1421,19 +1452,31 @@ const MemoDialog = ({
   const [attentionVisible, setAttentionVisible] = useState(false);
   const save = async () => {
     setBusy(true);
-    await updateMemo(memo.id, text, title);
-    await onChanged();
+    try {
+      onChanged("updated", await updateMemo(memo.id, text, title));
+    } catch {
+      setBusy(false);
+      onError("今は変更を保存できませんでした。元のメモは変わっていません。");
+    }
   };
   const remove = async () => {
     if (!window.confirm("この記録をゴミ箱へ移しますか？")) return;
     setBusy(true);
-    await trashMemo(memo.id);
-    await onChanged();
+    try {
+      onChanged("trashed", await trashMemo(memo.id));
+    } catch {
+      setBusy(false);
+      onError("今はゴミ箱へ移せませんでした。メモは残っています。");
+    }
   };
   const restore = async () => {
     setBusy(true);
-    await restoreMemo(memo.id);
-    await onChanged();
+    try {
+      onChanged("restored", await restoreMemo(memo.id));
+    } catch {
+      setBusy(false);
+      onError("今は元に戻せませんでした。メモはゴミ箱に残っています。");
+    }
   };
   return (
     <div className="dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>

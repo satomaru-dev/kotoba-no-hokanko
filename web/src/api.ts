@@ -83,8 +83,10 @@ export const updateMemo = async (id: string, text: string, title: string): Promi
   return result.memo;
 };
 
-export const trashMemo = (id: string): Promise<void> =>
-  request(`/memos/${id}`, { method: "DELETE" });
+export const trashMemo = async (id: string): Promise<Memo> => {
+  const result = await request<{ memo: Memo }>(`/memos/${id}`, { method: "DELETE" });
+  return result.memo;
+};
 
 export const restoreMemo = async (id: string): Promise<Memo> => {
   const result = await request<{ memo: Memo }>(`/memos/${id}/restore`, { method: "POST" });

@@ -1019,11 +1019,13 @@ if (route === "/search" && request.method === "POST") {
         return json({ memo });
       }
       if (request.method === "DELETE") {
-        const { error } = await admin.from("captured_memos")
-          .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-          .eq("id", id).eq("owner_id", ownerId);
+        const now = new Date().toISOString();
+        const { data, error } = await admin.from("captured_memos")
+          .update({ deleted_at: now, updated_at: now })
+          .eq("id", id).eq("owner_id", ownerId).select("*").single();
         if (error) throw error;
-        return new Response(null, { status: 204, headers: corsHeaders });
+        const [memo] = await decryptMemos(admin, ownerId, [data]);
+        return json({ memo });
       }
       if (request.method === "PATCH") {
         const body = await request.json();
