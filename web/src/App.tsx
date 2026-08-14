@@ -521,6 +521,7 @@ export const App = () => {
       triggerReaction();
     } finally {
       textarea.current?.blur();
+      if (textarea.current) textarea.current.style.height = "";
       setText("");
       setSaving(false);
       window.setTimeout(() => {
@@ -897,27 +898,32 @@ export const App = () => {
         {tab === "write" && (
           <>
             <section className="write-panel">
-              <label className="sr-only" htmlFor="thought">思いついた言葉</label>
-              <textarea
-                ref={textarea}
-                id="thought"
-                value={text}
-                onChange={(event) => {
-                  setText(event.target.value);
-                  setSaveState("idle");
-                }}
-                placeholder={"いま浮かんでいることを、\n整えずにそのまま。"}
-                autoFocus
-              />
-              <div className="write-actions">
-                <span className="quiet-status">
-                  {pendingCount > 0 ? `${pendingCount}件、端末で預かり中` : "原文のまま残ります"}
-                </span>
-                {text.trim() && (
-                  <button className="save-button" disabled={saving} onClick={save}>
-                    {saving ? "残しています…" : "残す"}
-                  </button>
-                )}
+              <div className="write-composer">
+                <label className="sr-only" htmlFor="thought">思いついた言葉</label>
+                <textarea
+                  ref={textarea}
+                  id="thought"
+                  rows={2}
+                  value={text}
+                  onChange={(event) => {
+                    setText(event.target.value);
+                    setSaveState("idle");
+                    event.currentTarget.style.height = "auto";
+                    event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 240)}px`;
+                  }}
+                  placeholder={"いま浮かんでいることを、\n整えずにそのまま。"}
+                  autoFocus
+                />
+                <div className="write-actions">
+                  <span className="quiet-status">
+                    {pendingCount > 0 ? `${pendingCount}件、端末で預かり中` : "原文のまま残ります"}
+                  </span>
+                  {text.trim() && (
+                    <button className="save-button" disabled={saving} onClick={save}>
+                      {saving ? "残しています…" : "残す"}
+                    </button>
+                  )}
+                </div>
               </div>
             </section>
             {saveState !== "idle" && (
