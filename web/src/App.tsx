@@ -199,7 +199,6 @@ const RelatedCards = ({
                 <time>{formatDate(memory.date)}</time>
                 <span className="relation">{memory.relation}</span>
               </span>
-              <strong>{memory.title}</strong>
               <span className="memory-excerpt">{memory.excerpt}</span>
               {memory.has_dialogue && (
                 <span className="dialogue-count">過去との対話 {memory.dialogue_count}件</span>
@@ -906,7 +905,7 @@ export const App = () => {
         <div className="due-reminder">
           <button onClick={() => void openDueReminder(dueReminders[0]!)}>
             <span>もう一度考えたかった言葉があります</span>
-            <strong>{dueReminders[0].memo?.title}</strong>
+            <span className="reminder-excerpt">{dueReminders[0].memo?.current_text}</span>
           </button>
           <button
             className="dismiss-reminder"
@@ -1327,7 +1326,7 @@ const DoLaterFocusDialog = ({ item, onClose, onOpenMemo }: { item: DoLaterItem; 
     <article className="start-dialog focus-dialog" role="dialog" aria-modal="true">
       <button className="close-button" onClick={onClose} aria-label="閉じる">×</button>
       <p className="eyebrow">まず、これだけ。</p>
-      <h2>{item.first_step || item.memo.title}</h2>
+      <h2>{item.first_step || item.memo.current_text}</h2>
       {item.launch_url && <a className="primary-button start-link" href={item.launch_url} target="_blank" rel="noreferrer">開く</a>}
       <button className="text-button" onClick={onOpenMemo}>元の言葉を見る</button>
     </article>
@@ -1358,7 +1357,6 @@ const MemoryPreviewDialog = ({
     <article className="memo-dialog" role="dialog" aria-modal="true">
       <button className="close-button" onClick={onClose} aria-label="閉じる">×</button>
       <time>{formatDate(memory.date)}</time>
-      <h2>{memory.title}</h2>
       <p className="full-text">{memory.excerpt}</p>
       {onDialogue && (
         <button className="dialogue-button" onClick={onDialogue}>
@@ -1400,13 +1398,11 @@ const IdeaThreadDialog = ({
         <div className="thread-timeline">
           <section className="thread-entry root">
             <time>{formatDate(thread.root.date)}</time>
-            <strong>{thread.root.title}</strong>
             <p>{thread.root.text}</p>
           </section>
           {thread.entries.map((entry) => (
             <section className="thread-entry" key={entry.id}>
               <time>{formatDate(entry.written_at)}</time>
-              <strong>{entry.title}</strong>
               <p>{entry.text}</p>
             </section>
           ))}
@@ -1445,7 +1441,6 @@ const MemoDialog = ({
   onAttention?: (level: AttentionLevel) => void;
 }) => {
   const [editing, setEditing] = useState(false);
-  const [title, setTitle] = useState(memo.title);
   const [text, setText] = useState(memo.current_text);
   const [historyVisible, setHistoryVisible] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -1453,7 +1448,7 @@ const MemoDialog = ({
   const save = async () => {
     setBusy(true);
     try {
-      onChanged("updated", await updateMemo(memo.id, text, title));
+      onChanged("updated", await updateMemo(memo.id, text));
     } catch {
       setBusy(false);
       onError("今は変更を保存できませんでした。元のメモは変わっていません。");
@@ -1485,12 +1480,10 @@ const MemoDialog = ({
         <time>{formatDate(memo.captured_at)}</time>
         {editing ? (
           <>
-            <input className="edit-title" value={title} onChange={(event) => setTitle(event.target.value)} />
             <textarea className="edit-text" value={text} onChange={(event) => setText(event.target.value)} />
           </>
         ) : (
           <>
-            <h2>{memo.title}</h2>
             <p className="full-text">{memo.current_text}</p>
           </>
         )}

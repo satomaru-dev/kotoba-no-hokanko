@@ -147,8 +147,7 @@ button:disabled { cursor: default; }
 .memo-dialog > time { color: var(--muted); font-size: 11px; }
 .memo-dialog h2 { max-width: 90%; margin: 10px 0 19px; font-size: 20px; }
 .full-text { margin: 0; white-space: pre-wrap; font-family: "Yu Mincho", serif; font-size: 17px; line-height: 1.9; }
-.edit-title, .edit-text { width: 100%; border: 1px solid var(--line); outline-color: var(--accent); background: white; }
-.edit-title { margin: 12px 0; padding: 12px; font-weight: 700; }
+.edit-text { width: 100%; min-height: 220px; border: 1px solid var(--line); outline-color: var(--accent); background: white; }
 .edit-text { min-height: 40vh; padding: 14px; font-family: "Yu Mincho", serif; font-size: 16px; line-height: 1.8; resize: vertical; }
 .original-note { margin-top: 26px; padding: 15px; border-left: 3px solid var(--line); background: var(--paper); }
 .original-note span { color: var(--muted); font-size: 11px; font-weight: 700; }
@@ -215,7 +214,7 @@ button:disabled { cursor: default; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
 }
-/* ことばの保管庫 redesign overrides */
+/* 邵ｺ阮吮・邵ｺ・ｰ邵ｺ・ｮ闖ｫ譎会ｽｮ・｡陟趣ｽｫ redesign overrides */
 .nav-icon { display: flex; width: 52px; height: 28px; align-items: center; justify-content: center; font-size: 0; line-height: 1; }
 .nav-svg { display: block; width: 21px; height: 21px; }
 .bottom-nav { position: fixed; z-index: 20; bottom: 0; left: 50%; display: grid; grid-template-columns: repeat(4, 1fr); width: min(760px, 100%); padding: 7px 0 max(12px, env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--paper); transform: translateX(-50%); }

@@ -75,10 +75,10 @@ export const listMemos = async (deleted = false): Promise<Memo[]> => {
   return result.memos;
 };
 
-export const updateMemo = async (id: string, text: string, title: string): Promise<Memo> => {
+export const updateMemo = async (id: string, text: string, title?: string): Promise<Memo> => {
   const result = await request<{ memo: Memo }>(`/memos/${id}`, {
     method: "PATCH",
-    body: JSON.stringify({ text, title })
+    body: JSON.stringify(title === undefined ? { text } : { text, title })
   });
   return result.memo;
 };
