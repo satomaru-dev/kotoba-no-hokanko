@@ -57,8 +57,6 @@ button:disabled { cursor: default; }
 .save-message span { font-family: "Yu Mincho", serif; font-size: 18px; font-weight: 700; }
 .save-message small { color: var(--muted); }
 .save-message.queued { color: #8a5b27; }
-.do-later-mark-button { display: block; width: 100%; margin-top: 12px; padding: 12px; border: 1px solid #cbbdaa; border-radius: 3px 12px 3px 3px; background: #fffaf1; color: var(--accent-dark); font-weight: 700; }
-.do-later-mark-button:disabled { color: var(--green); opacity: .75; }
 
 .related-section { margin-top: 34px; }
 .related-section h2 { margin: 0 0 15px; font-family: "Yu Mincho", serif; font-size: 20px; font-weight: 600; }
@@ -225,7 +223,6 @@ button:disabled { cursor: default; }
 .bottom-nav button.active { color: var(--primary-text); font-weight: 600; }
 .bottom-nav button.active .nav-icon { border-radius: 999px; background: var(--primary-bg); }
 .write-panel { min-height: calc(100vh - 148px); }
-.do-later-mark-button { border: 0; border-radius: 12px; background: var(--primary-bg); color: var(--primary-text); }
 .related-section { margin-top: 28px; }
 .memory-card, .do-later-card { border: 0; border-radius: 14px; background: var(--card); box-shadow: 0 1px 3px rgba(60,45,25,.08); }
 .memory-card-main { padding: 13px 15px; }

@@ -313,7 +313,6 @@ export const App = () => {
   const [saveState, setSaveState] = useState<"idle" | "saved" | "queued">("idle");
   const [related, setRelated] = useState<RelatedMemory[]>([]);
   const [lastSavedMemo, setLastSavedMemo] = useState<Memo | null>(null);
-  const [lastSavedMarked, setLastSavedMarked] = useState(false);
   const [showReminder, setShowReminder] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [query, setQuery] = useState("");
@@ -498,7 +497,6 @@ export const App = () => {
     setSaving(true);
     setRelated([]);
     setLastSavedMemo(null);
-    setLastSavedMarked(false);
     setShowReminder(false);
     setSaveState("idle");
     const input: CaptureInput = {
@@ -604,7 +602,6 @@ export const App = () => {
     if (!lastSavedMemo) return;
     try {
       await addDoLater(lastSavedMemo.id, attentionLevel);
-      if (attentionLevel === "do_later") setLastSavedMarked(true);
       await Promise.all([refreshDoLater(), refreshMemos()]);
       setShowReminder(false);
       setNotice("この言葉の置き場所を決めました。");
@@ -628,7 +625,6 @@ export const App = () => {
   const markDoLater = async (memo: Memo) => {
     try {
       await addDoLater(memo.id);
-      if (lastSavedMemo?.id === memo.id) setLastSavedMarked(true);
       await Promise.all([refreshDoLater(), refreshMemos()]);
       setNotice("「あとでやる」に置きました。");
       triggerReaction();
@@ -935,15 +931,6 @@ export const App = () => {
                     : "通信が戻ったら、自動で保管庫へ送ります。"}
                 </small>
               </div>
-            )}
-            {saveState === "saved" && lastSavedMemo && (
-              <button
-                className="do-later-mark-button"
-                disabled={lastSavedMarked}
-                onClick={() => void markDoLater(lastSavedMemo)}
-              >
-                {lastSavedMarked ? "あとでやるに置きました" : "あとでやる"}
-              </button>
             )}
             {showReminder && lastSavedMemo && (
               <AttentionChooser
