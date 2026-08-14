@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { FormEvent } from "react";
+import type { FormEvent, ReactNode } from "react";
+import { DndContext, DragOverlay, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
+import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import type { Session } from "@supabase/supabase-js";
 import {
   addDoLater,
@@ -287,6 +290,16 @@ const AuthScreen = ({ onReady }: { onReady: (session: Session) => void }) => {
   );
 };
 
+const SortableDoLaterCard = ({ id, children }: { id: string; children: ReactNode }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style = { transform: CSS.Transform.toString(transform), transition, touchAction: "none" as const, zIndex: isDragging ? 2 : undefined };
+  return (
+    <div ref={setNodeRef} style={style} className={isDragging ? "sortable-do-later is-dragging" : "sortable-do-later"} {...attributes} {...listeners}>
+      {children}
+    </div>
+  );
+};
+
 export const App = () => {
   const [session, setSession] = useState<Session | null | undefined>(cloudMode ? undefined : null);
   const [minimumLoadingDone, setMinimumLoadingDone] = useState(false);
@@ -311,8 +324,7 @@ export const App = () => {
   const [trash, setTrash] = useState<Memo[]>([]);
   const [doLaterActive, setDoLaterActive] = useState<DoLaterItem[]>([]);
   const [doLaterResolved, setDoLaterResolved] = useState<DoLaterItem[]>([]);
-  const [draggingMemoId, setDraggingMemoId] = useState<string | null>(null);
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [draggingDoLaterId, setDraggingDoLaterId] = useState<string | null>(null);
   const [showDoLaterHistory, setShowDoLaterHistory] = useState(false);
   const [setupItem, setSetupItem] = useState<DoLaterItem | null>(null);
   const [workspaceItem, setWorkspaceItem] = useState<DoLaterItem | null>(null);
@@ -328,9 +340,6 @@ export const App = () => {
   const [reactionVisible, setReactionVisible] = useState(false);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const saveMessage = useRef<HTMLDivElement>(null);
-  const reorderTimer = useRef<number | null>(null);
-  const reorderStart = useRef<{ id: string; x: number; y: number } | null>(null);
-  const suppressNextOpen = useRef(false);
 
   const triggerReaction = () => {
     setReactionVisible(true);
@@ -663,65 +672,26 @@ export const App = () => {
     }
   };
 
-  const clearReorderTimer = () => {
-    if (reorderTimer.current !== null) window.clearTimeout(reorderTimer.current);
-    reorderTimer.current = null;
+  const reorderSensors = useSensors(
+    useSensor(TouchSensor, { activationConstraint: { delay: 500, tolerance: 8 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+  );
+
+  const handleDoLaterDragStart = ({ active }: DragStartEvent) => {
+    setDraggingDoLaterId(String(active.id));
   };
 
-  const handleDoLaterPointerDown = (event: React.PointerEvent<HTMLButtonElement>, item: DoLaterItem) => {
-    if (event.pointerType === "mouse" && event.button !== 0) return;
-    clearReorderTimer();
-    reorderStart.current = { id: item.memo_id, x: event.clientX, y: event.clientY };
-    const pointerTarget = event.currentTarget;
-    reorderTimer.current = window.setTimeout(() => {
-      setDraggingMemoId(item.memo_id);
-      setDragOverIndex(doLaterActive.findIndex((entry) => entry.memo_id === item.memo_id));
-      suppressNextOpen.current = true;
-      pointerTarget.setPointerCapture(event.pointerId);
-      reorderTimer.current = null;
-    }, 500);
-  };
-
-  const handleDoLaterPointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
-    const start = reorderStart.current;
-    if (!start) return;
-    const distance = Math.hypot(event.clientX - start.x, event.clientY - start.y);
-    if (!draggingMemoId && distance > 8) {
-      clearReorderTimer();
-      reorderStart.current = null;
-      return;
-    }
-    if (!draggingMemoId) return;
-    event.preventDefault();
-    const cards = [...document.querySelectorAll<HTMLElement>("[data-do-later-id]")]
-      .filter((card) => card.dataset.doLaterId !== draggingMemoId);
-    let index = cards.length;
-    cards.some((card, cardIndex) => {
-      const rect = card.getBoundingClientRect();
-      if (event.clientY < rect.top + rect.height / 2) { index = cardIndex; return true; }
-      return false;
-    });
-    setDragOverIndex(index);
-  };
-
-  const finishDoLaterReorder = async () => {
-    clearReorderTimer();
-    const id = draggingMemoId;
-    const targetIndex = dragOverIndex;
-    reorderStart.current = null;
-    setDraggingMemoId(null);
-    setDragOverIndex(null);
-    if (!id || targetIndex === null) return;
+  const handleDoLaterDragEnd = async ({ active, over }: DragEndEvent) => {
+    setDraggingDoLaterId(null);
+    if (!over || active.id === over.id) return;
     const previous = doLaterActive;
-    const remaining = previous.filter((item) => item.memo_id !== id);
-    const target = previous.find((item) => item.memo_id === id);
-    if (!target) return;
-    const next = [...remaining];
-    next.splice(Math.min(targetIndex, next.length), 0, target);
-    if (next.every((item, index) => item.memo_id === previous[index]?.memo_id)) return;
+    const oldIndex = previous.findIndex((item) => item.memo_id === String(active.id));
+    const newIndex = previous.findIndex((item) => item.memo_id === String(over.id));
+    if (oldIndex < 0 || newIndex < 0) return;
+    const next = arrayMove(previous, oldIndex, newIndex);
     setDoLaterActive(next);
     try {
-      await reorderDoLater(id, next.map((item) => item.memo_id));
+      await reorderDoLater(String(active.id), next.map((item) => item.memo_id));
       setNotice("配置を変えました。");
     } catch {
       setDoLaterActive(previous);
@@ -994,17 +964,23 @@ export const App = () => {
               </button>
             )}
             <p className="do-later-intro">行動につながりそうな言葉を、ここでもう一度。</p>
-            <div className="do-later-list">
+            <DndContext
+              sensors={reorderSensors}
+              collisionDetection={closestCenter}
+              autoScroll={true}
+              onDragStart={handleDoLaterDragStart}
+              onDragEnd={(event) => void handleDoLaterDragEnd(event)}
+              onDragCancel={() => setDraggingDoLaterId(null)}
+            >
+              <SortableContext items={doLaterActive.map((item) => item.memo_id)} strategy={verticalListSortingStrategy}>
+                <div className="do-later-list">
               {doLaterActive.map((item) => (
-                <article className={`do-later-card ${draggingMemoId === item.memo_id ? "is-dragging" : ""} ${dragOverIndex === doLaterActive.filter((entry) => entry.memo_id !== draggingMemoId).findIndex((entry) => entry.memo_id === item.memo_id) ? "is-drop-target" : ""}`} data-do-later-id={item.memo_id} key={item.memo_id}>
+                <SortableDoLaterCard id={item.memo_id} key={item.memo_id}>
+                  <article className="do-later-card">
                   <button
                     className="do-later-main"
                     type="button"
-                    onPointerDown={(event) => handleDoLaterPointerDown(event, item)}
-                    onPointerMove={handleDoLaterPointerMove}
-                    onPointerUp={() => void finishDoLaterReorder()}
-                    onPointerCancel={() => { clearReorderTimer(); reorderStart.current = null; suppressNextOpen.current = false; setDraggingMemoId(null); setDragOverIndex(null); }}
-                    onClick={(event) => { if (suppressNextOpen.current) { suppressNextOpen.current = false; event.preventDefault(); return; } openDoLater(item); }}>
+                    onClick={() => openDoLater(item)}>
                     <time>{formatRelativeDate(item.memo.captured_at)}</time>
 
                     {START_ASSIST_BETA && item.first_step && (
@@ -1035,12 +1011,23 @@ export const App = () => {
                     <button className="do-later-later" onClick={() => void actOnDoLater(item.memo_id, "later")}>まだやらない</button>
                     <button className="do-later-abandon" onClick={() => void actOnDoLater(item.memo_id, "abandon")}>やっぱりやめる</button>
                   </div>
-                </article>
+                  </article>
+                </SortableDoLaterCard>
               ))}
               {doLaterActive.length === 0 && (
                 <p className="empty-message">いま「あとでやる」に置いている言葉はありません。</p>
               )}
-            </div>
+                </div>
+              </SortableContext>
+              <DragOverlay>
+                {draggingDoLaterId ? (
+                  <div className="do-later-drag-overlay">
+                    {doLaterActive.find((item) => item.memo_id === draggingDoLaterId)?.memo.current_text}
+                  </div>
+                ) : null}
+              </DragOverlay>
+            </DndContext>
+
             <section className="do-later-history">
               <button
                 className="do-later-history-toggle"
