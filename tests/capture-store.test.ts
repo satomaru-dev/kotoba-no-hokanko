@@ -143,6 +143,20 @@ describe("capture store", () => {
     expect(store.listDoLater("active").map((item) => item.memo_id)).toEqual([ids[2], ids[0], ids[1]]);
   });
 
+  it("reorders visible do-later items while preserving a trashed item", async () => {
+    const { store } = await makeStore();
+    const ids = ["bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3"];
+    for (const [index, id] of ids.entries()) await store.capture(id, id, "2026-08-02T0" + index + ":00:00.000Z");
+    for (const id of ids) await store.addDoLater(id, "do_later");
+
+    await store.trash(ids[1]!);
+    expect(await store.reorderDoLater([ids[0]!, ids[2]!])).not.toBeNull();
+    expect(store.listDoLater("active").map((item) => item.memo_id)).toEqual([ids[0], ids[2]]);
+
+    await store.restore(ids[1]!);
+    expect(store.listDoLater("active").map((item) => item.memo_id)).toContain(ids[1]);
+  });
+
   it("records normalized search insights without changing memo data", async () => {
     const { store } = await makeStore();
     const first = await store.recordSearch("  アイデア   探索 ");

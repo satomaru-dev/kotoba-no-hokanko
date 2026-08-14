@@ -316,7 +316,13 @@ export class CaptureStore {
   }
 
   async reorderDoLater(ids: string[], now = new Date().toISOString()): Promise<DoLaterItem[] | null> {
-    const active = [...this.doLater.values()].filter((item) => item.status === "active" && item.attention_level === "do_later");
+    const active = [...this.doLater.values()].filter((item) => {
+      const memo = this.memos.get(item.memo_id);
+      return item.status === "active"
+        && item.attention_level === "do_later"
+        && Boolean(memo)
+        && !memo?.deleted_at;
+    });
     const allowed = new Set(active.map((item) => item.memo_id));
     if (ids.length !== allowed.size || new Set(ids).size !== ids.length || ids.some((id) => !allowed.has(id))) return null;
     ids.forEach((id, index) => {

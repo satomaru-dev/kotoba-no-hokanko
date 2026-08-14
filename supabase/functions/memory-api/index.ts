@@ -937,7 +937,16 @@ if (route === "/search" && request.method === "POST") {
           const { data: activeRows, error: activeError } = await admin.from("memo_later_items")
             .select("memo_id").eq("owner_id", ownerId).eq("status", "active").eq("attention_level", "do_later");
           if (activeError) throw activeError;
-          const allowed = new Set((activeRows ?? []).map((row) => row.memo_id));
+          const activeIds = (activeRows ?? []).map((row) => row.memo_id);
+          const { data: visibleMemos, error: visibleMemoError } = activeIds.length === 0
+            ? { data: [], error: null }
+            : await admin.from("captured_memos")
+                .select("id")
+                .eq("owner_id", ownerId)
+                .is("deleted_at", null)
+                .in("id", activeIds);
+          if (visibleMemoError) throw visibleMemoError;
+          const allowed = new Set((visibleMemos ?? []).map((memo) => memo.id));
           if (ids.length !== allowed.size || new Set(ids).size !== ids.length || ids.some((id: string) => !allowed.has(id))) return json({ error: "invalid_request" }, 400);
           for (const [index, id] of ids.entries()) {
             const { error } = await admin.from("memo_later_items").update({ manual_order: index + 1, updated_at: now }).eq("memo_id", id).eq("owner_id", ownerId);
