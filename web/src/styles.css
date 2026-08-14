@@ -283,6 +283,6 @@ button:disabled { cursor: default; }
 .attention-options small { color: var(--muted); font-size: 11px; }
 
 .do-later-main { user-select: none; }
-.sortable-do-later { touch-action: none; }
+.sortable-do-later { touch-action: pan-y; }
 .sortable-do-later.is-dragging { opacity: .72; }
 .do-later-drag-overlay { padding: 14px 16px; border-radius: 14px; background: var(--card); color: var(--ink); box-shadow: 0 8px 24px rgba(80,55,25,.18); opacity: .9; }

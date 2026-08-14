@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
-import { DndContext, DragOverlay, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
+import { DndContext, DragOverlay, MouseSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { Session } from "@supabase/supabase-js";
@@ -292,7 +292,7 @@ const AuthScreen = ({ onReady }: { onReady: (session: Session) => void }) => {
 
 const SortableDoLaterCard = ({ id, children }: { id: string; children: ReactNode }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-  const style = { transform: CSS.Transform.toString(transform), transition, touchAction: "none" as const, zIndex: isDragging ? 2 : undefined };
+  const style = { transform: CSS.Transform.toString(transform), transition, touchAction: "pan-y" as const, zIndex: isDragging ? 2 : undefined };
   return (
     <div ref={setNodeRef} style={style} className={isDragging ? "sortable-do-later is-dragging" : "sortable-do-later"} {...attributes} {...listeners}>
       {children}
@@ -674,7 +674,7 @@ export const App = () => {
 
   const reorderSensors = useSensors(
     useSensor(TouchSensor, { activationConstraint: { delay: 500, tolerance: 8 } }),
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } })
   );
 
   const handleDoLaterDragStart = ({ active }: DragStartEvent) => {
