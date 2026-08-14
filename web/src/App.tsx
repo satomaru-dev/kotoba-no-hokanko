@@ -72,7 +72,7 @@ const START_ASSIST_BETA = import.meta.env.VITE_START_ASSIST_BETA !== "false";
 const SEARCH_INSIGHTS_KEY = "kotoba-search-insights-v1";
 
 const emptySearchInsights = (): SearchInsights => ({ recent: [], frequent: [] });
-const attentionLabel = (level: AttentionLevel): string => ({ do_later: "\u3042\u3068\u3067\u3084\u308b", keep_in_mind: "\u3057\u3070\u3089\u304f\u610f\u8b58", important_insight: "\u91cd\u8981\u306a\u6c17\u3065\u304d" }[level]);
+const attentionLabel = (level: AttentionLevel): string => ({ do_later: "\u3042\u3068\u3067\u3084\u308b", keep_in_mind: "\u3057\u3070\u3089\u304f\u610f\u8b58\u3057\u3066\u304a\u304d\u305f\u3044", important_insight: "\u4eca\u306e\u81ea\u5206\u306b\u3068\u3063\u3066\u7d50\u69cb\u91cd\u8981\u306a\u6c17\u3065\u304d" }[level]);
 const readCachedSearchInsights = (): SearchInsights => {
   try {
     const value = localStorage.getItem(SEARCH_INSIGHTS_KEY);
@@ -604,7 +604,7 @@ export const App = () => {
       await addDoLater(lastSavedMemo.id, attentionLevel);
       await Promise.all([refreshDoLater(), refreshMemos()]);
       setShowReminder(false);
-      setNotice("この言葉の置き場所を決めました。");
+      setNotice(`「${attentionLabel(attentionLevel)}」に置きました。`);
       triggerReaction();
     } catch {
       setNotice("今は重要度を保存できませんでした。メモは残っています。");
@@ -637,7 +637,7 @@ export const App = () => {
     try {
       await addDoLater(memo.id, attentionLevel);
       await Promise.all([refreshDoLater(), refreshMemos()]);
-      setNotice("重要度を変えました。");
+      setNotice(`「${attentionLabel(attentionLevel)}」に変更しました。`);
       triggerReaction();
     } catch {
       setNotice("重要度を変更できませんでした。メモは変わっていません。");
