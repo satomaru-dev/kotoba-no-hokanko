@@ -110,6 +110,7 @@ export interface DoLaterItem {
   bottom_order: number | null;
   manual_order: number | null;
   attention_level: AttentionLevel;
+  heavy_marked: boolean;
   updated_at: string;
   resolved_at: string | null;
   first_step: string | null;

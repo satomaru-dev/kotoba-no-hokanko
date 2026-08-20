@@ -370,6 +370,7 @@ const loadDoLaterItems = async (
       deferred_at: item.deferred_at ?? null,
       bottom_order: item.bottom_order ?? null,
       attention_level: item.attention_level ?? "do_later",
+      heavy_marked: Boolean(item.heavy_marked),
       updated_at: item.updated_at,
       resolved_at: item.resolved_at,
       first_step: item.first_step_ciphertext ? await decrypt(item.first_step_ciphertext) : null,
@@ -916,11 +917,11 @@ if (route === "/search" && request.method === "POST") {
         if (currentError) throw currentError;
         const result = current
           ? await admin.from("memo_later_items").update({
-              status: "active", activated_at: now, deferred_at: null, bottom_order: null, manual_order: null, attention_level: attentionLevel, updated_at: now, resolved_at: null
+              status: "active", activated_at: now, deferred_at: null, bottom_order: null, manual_order: null, attention_level: attentionLevel, heavy_marked: false, updated_at: now, resolved_at: null
             }).eq("memo_id", memoId).eq("owner_id", ownerId)
           : await admin.from("memo_later_items").insert({
               memo_id: memoId, owner_id: ownerId, status: "active",
-              activated_at: now, deferred_at: null, bottom_order: null, manual_order: null, attention_level: attentionLevel, updated_at: now, resolved_at: null,
+              activated_at: now, deferred_at: null, bottom_order: null, manual_order: null, attention_level: attentionLevel, heavy_marked: false, updated_at: now, resolved_at: null,
               roulette_enabled: false
             });
         if (result.error) throw result.error;
@@ -928,7 +929,7 @@ if (route === "/search" && request.method === "POST") {
       }
       if (request.method === "PATCH") {
         const { data: current, error: currentError } = await admin.from("memo_later_items")
-          .select("memo_id,activated_at,deferred_at,bottom_order,manual_order,attention_level").eq("memo_id", memoId).eq("owner_id", ownerId).maybeSingle();
+          .select("memo_id,activated_at,deferred_at,bottom_order,manual_order,attention_level,heavy_marked").eq("memo_id", memoId).eq("owner_id", ownerId).maybeSingle();
         if (currentError) throw currentError;
         if (!current) return json({ error: "not_found" }, 404);
         const body = await request.json();
@@ -993,6 +994,7 @@ if (route === "/search" && request.method === "POST") {
           deferred_at: action === "later" ? now : current.deferred_at,
           bottom_order: action === "later" ? Date.parse(now) : current.bottom_order,
           manual_order: action === "later" ? Date.parse(now) : current.manual_order,
+          heavy_marked: action === "later" && body.heavy_marked !== undefined ? Boolean(body.heavy_marked) : Boolean(current.heavy_marked),
           updated_at: now,
           resolved_at: status === "active" ? null : now
         };

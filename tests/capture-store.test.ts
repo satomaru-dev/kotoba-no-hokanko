@@ -157,6 +157,18 @@ describe("capture store", () => {
     expect(store.listDoLater("active").map((item) => item.memo_id)).toContain(ids[1]);
   });
 
+  it("persists and resets the heavy mark", async () => {
+    const { store } = await makeStore();
+    const id = "cccccccc-cccc-4ccc-8ccc-ccccccccccc1";
+    await store.capture(id, "気持ちが重い言葉", "2026-08-02T00:00:00.000Z");
+    await store.addDoLater(id, "2026-08-02T01:00:00.000Z");
+    await store.updateDoLater(id, "later", true, "2026-08-02T02:00:00.000Z");
+    expect(store.listDoLater("active")[0]?.heavy_marked).toBe(true);
+    await store.updateDoLater(id, "done", "2026-08-02T03:00:00.000Z");
+    await store.addDoLater(id, "2026-08-02T04:00:00.000Z");
+    expect(store.listDoLater("active")[0]?.heavy_marked).toBe(false);
+  });
+
   it("records normalized search insights without changing memo data", async () => {
     const { store } = await makeStore();
     const first = await store.recordSearch("  アイデア   探索 ");

@@ -684,9 +684,9 @@ export const App = () => {
     });
   };
 
-  const actOnDoLater = async (memoId: string, action: DoLaterAction) => {
+  const actOnDoLater = async (memoId: string, action: DoLaterAction, heavyMarked?: boolean) => {
     try {
-      await updateDoLater(memoId, action);
+      await updateDoLater(memoId, action, { heavy_marked: heavyMarked });
       if (action === "later") {
         moveDoLaterToBottom(memoId);
         setNotice("一覧の末尾へ移しました。");
@@ -1014,6 +1014,7 @@ export const App = () => {
                     {START_ASSIST_BETA && item.first_step && (
                       <em className="first-step-preview">まず、これだけ：{item.first_step}</em>
                     )}
+                    {item.heavy_marked && <span className="heavy-mark">気持ちが重い</span>}
                     <span className="do-later-text">{item.memo.current_text}</span>
                   </button>
                   {START_ASSIST_BETA && (
@@ -1232,14 +1233,15 @@ export const App = () => {
       {pendingLaterId && (
         <LaterReasonDialog
           onClose={() => setPendingLaterId(null)}
-          onAvoid={() => {
-            setPendingLaterId(null);
-            setNotice("嫌なまま、ここに置いておきます。");
-          }}
-          onDefer={() => {
+          onIntentional={() => {
             const memoId = pendingLaterId;
             setPendingLaterId(null);
-            void actOnDoLater(memoId, "later");
+            void actOnDoLater(memoId, "later", false);
+          }}
+          onHeavy={() => {
+            const memoId = pendingLaterId;
+            setPendingLaterId(null);
+            void actOnDoLater(memoId, "later", true);
           }}
         />
       )}
@@ -1342,21 +1344,21 @@ const DoLaterSetupDialog = ({
 
 const LaterReasonDialog = ({
   onClose,
-  onAvoid,
-  onDefer
+  onIntentional,
+  onHeavy
 }: {
   onClose: () => void;
-  onAvoid: () => void;
-  onDefer: () => void;
+  onIntentional: () => void;
+  onHeavy: () => void;
 }) => (
   <div className="dialog-backdrop later-reason-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
     <article className="later-reason-dialog" role="dialog" aria-modal="true" aria-labelledby="later-reason-title">
       <button className="close-button" onClick={onClose} aria-label="閉じる">×</button>
-      <h2 id="later-reason-title">まだやらないのは、嫌だから？</h2>
+      <h2 id="later-reason-title">今の「まだやらない」は、どんな感じ？</h2>
       <p>今の自分との距離感を、そのまま選びます。</p>
       <div className="later-reason-actions">
-        <button className="later-reason-avoid" onClick={onAvoid}>嫌だから</button>
-        <button className="later-reason-defer" onClick={onDefer}>今じゃない</button>
+        <button className="later-reason-defer" onClick={onIntentional}>今はやらないと決めている</button>
+        <button className="later-reason-heavy" onClick={onHeavy}>考えると気持ちが重い</button>
       </div>
     </article>
   </div>

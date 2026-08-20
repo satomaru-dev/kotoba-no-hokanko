@@ -32,6 +32,7 @@ export interface DoLaterItem {
   bottom_order: number | null;
   manual_order: number | null;
   attention_level: AttentionLevel;
+  heavy_marked: boolean;
   updated_at: string;
   resolved_at: string | null;
   first_step: string | null;
@@ -48,6 +49,7 @@ interface StoredDoLaterItem {
   bottom_order: number | null;
   manual_order: number | null;
   attention_level: AttentionLevel;
+  heavy_marked: boolean;
   updated_at: string;
   resolved_at: string | null;
   first_step: string | null;
@@ -106,6 +108,7 @@ export class CaptureStore {
         bottom_order: null,
         manual_order: null,
         attention_level: "do_later",
+        heavy_marked: false,
         first_step: null,
         launch_url: null,
         roulette_enabled: false,
@@ -269,6 +272,7 @@ export class CaptureStore {
       bottom_order: null,
       manual_order: null,
       attention_level: attentionLevel,
+      heavy_marked: false,
       updated_at: now,
       resolved_at: null
     };
@@ -290,7 +294,8 @@ export class CaptureStore {
   async updateDoLater(
     id: string,
     action: "done" | "later" | "abandon",
-    now = new Date().toISOString()
+    heavyMarkedOrNow?: boolean | string,
+    now = typeof heavyMarkedOrNow === "string" ? heavyMarkedOrNow : new Date().toISOString()
   ): Promise<DoLaterItem | null> {
     const memo = this.memos.get(id);
     const current = this.doLater.get(id);
@@ -307,6 +312,7 @@ export class CaptureStore {
       deferred_at: action === "later" ? now : current.deferred_at,
       bottom_order: action === "later" ? Date.parse(now) : current.bottom_order,
       manual_order: action === "later" ? Math.max(-1, ...[...this.doLater.values()].filter((item) => item.status === "active" && item.attention_level === "do_later" && item.memo_id !== id).map((item) => item.manual_order ?? -1)) + 1 : current.manual_order,
+      heavy_marked: action === "later" && typeof heavyMarkedOrNow === "boolean" ? heavyMarkedOrNow : current.heavy_marked,
       updated_at: now,
       resolved_at: status === "active" ? null : now
     };

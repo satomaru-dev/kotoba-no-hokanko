@@ -177,7 +177,7 @@ app.patch("/api/memos/:id/do-later", async (request: Request, response: Response
 
 app.patch("/api/memos/:id/do-later", async (request: Request, response: Response, next: NextFunction) => {
   try {
-    const body = request.body as { action?: string; configuration?: unknown; attention_level?: string };
+    const body = request.body as { action?: string; configuration?: unknown; attention_level?: string; heavy_marked?: boolean };
     const id = String(request.params.id ?? "");
     const item = body.attention_level !== undefined
       ? await captures.updateAttentionLevel(id, z.enum(["do_later", "keep_in_mind", "important_insight"]).parse(body.attention_level))
@@ -188,8 +188,9 @@ app.patch("/api/memos/:id/do-later", async (request: Request, response: Response
           roulette_enabled: z.boolean()
         }).parse(body.configuration))
       : await captures.updateDoLater(id, z.object({
-          action: z.enum(["done", "later", "abandon"])
-        }).parse(body).action);
+          action: z.enum(["done", "later", "abandon"]),
+          heavy_marked: z.boolean().optional()
+        }).parse(body).action, body.heavy_marked);
     if (!item) {
       response.status(404).json({ error: "not_found" });
       return;

@@ -182,7 +182,8 @@ export const addDoLater = async (memoId: string, attentionLevel: AttentionLevel 
 
 export const updateDoLater = async (
   memoId: string,
-  action: DoLaterAction
+  action: DoLaterAction,
+  options?: { heavy_marked?: boolean }
 ): Promise<DoLaterItem> => {
   const result = await request<{ item: DoLaterItem }>(`/memos/${memoId}/do-later`, {
     method: "PATCH",
