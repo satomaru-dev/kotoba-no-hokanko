@@ -291,3 +291,12 @@ button:disabled { cursor: default; }
 .write-composer .write-actions { min-height: 54px; padding: 5px 7px 7px 15px; }
 .write-composer .save-button { min-width: 76px; padding: 10px 18px; border-radius: 999px; }
 @media (max-width: 619px) { .write-panel .write-composer textarea { min-height: 76px; max-height: min(34dvh, 240px); } }
+
+.later-reason-backdrop { align-items: center; padding: 20px; }
+.later-reason-dialog { position: relative; width: min(440px, 100%); padding: 28px 22px 22px; border: 1px solid var(--line); border-radius: 18px; background: var(--card); box-shadow: 0 18px 60px rgba(60, 48, 34, .2); }
+.later-reason-dialog h2 { margin: 0 40px 10px 0; font-size: 20px; }
+.later-reason-dialog p { margin: 0; color: var(--muted); font-size: 13px; }
+.later-reason-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 24px; }
+.later-reason-actions button { min-height: 48px; padding: 10px 14px; border-radius: 12px; font: inherit; font-weight: 700; }
+.later-reason-avoid { border: 1px solid var(--line); background: transparent; color: var(--muted); }
+.later-reason-defer { border: 0; background: var(--primary); color: white; }

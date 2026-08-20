@@ -324,6 +324,7 @@ export const App = () => {
   const [doLaterActive, setDoLaterActive] = useState<DoLaterItem[]>([]);
   const [doLaterResolved, setDoLaterResolved] = useState<DoLaterItem[]>([]);
   const [draggingDoLaterId, setDraggingDoLaterId] = useState<string | null>(null);
+  const [pendingLaterId, setPendingLaterId] = useState<string | null>(null);
   const [showDoLaterHistory, setShowDoLaterHistory] = useState(false);
   const [setupItem, setSetupItem] = useState<DoLaterItem | null>(null);
   const [workspaceItem, setWorkspaceItem] = useState<DoLaterItem | null>(null);
@@ -699,6 +700,10 @@ export const App = () => {
     }
   };
 
+  const askAboutLater = (memoId: string) => {
+    setPendingLaterId(memoId);
+  };
+
   const reorderSensors = useSensors(
     useSensor(TouchSensor, { activationConstraint: { delay: 500, tolerance: 8 } }),
     useSensor(MouseSensor, { activationConstraint: { distance: 8 } })
@@ -1031,7 +1036,7 @@ export const App = () => {
                   )}
                   <div className="do-later-actions">
                     <button className="do-later-done" onClick={() => void actOnDoLater(item.memo_id, "done")}>やってあげた。</button>
-                    <button className="do-later-later" onClick={() => void actOnDoLater(item.memo_id, "later")}>まだやらない</button>
+                    <button className="do-later-later" onClick={() => askAboutLater(item.memo_id)}>まだやらない</button>
                     <button className="do-later-abandon" onClick={() => void actOnDoLater(item.memo_id, "abandon")}>やっぱりやめる</button>
                   </div>
                   </article>
@@ -1224,6 +1229,20 @@ export const App = () => {
           onOpenMemo={() => { setFocusItem(null); setSelected(focusItem.memo); }}
         />
       )}
+      {pendingLaterId && (
+        <LaterReasonDialog
+          onClose={() => setPendingLaterId(null)}
+          onAvoid={() => {
+            setPendingLaterId(null);
+            setNotice("嫌なまま、ここに置いておきます。");
+          }}
+          onDefer={() => {
+            const memoId = pendingLaterId;
+            setPendingLaterId(null);
+            void actOnDoLater(memoId, "later");
+          }}
+        />
+      )}
       {reactionVisible && <ReactionMascot className="reaction-mascot" />}
       {notice && (
         <button className="notice" onClick={() => setNotice("")}>{notice}</button>
@@ -1320,6 +1339,28 @@ const DoLaterSetupDialog = ({
     </div>
   );
 };
+
+const LaterReasonDialog = ({
+  onClose,
+  onAvoid,
+  onDefer
+}: {
+  onClose: () => void;
+  onAvoid: () => void;
+  onDefer: () => void;
+}) => (
+  <div className="dialog-backdrop later-reason-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <article className="later-reason-dialog" role="dialog" aria-modal="true" aria-labelledby="later-reason-title">
+      <button className="close-button" onClick={onClose} aria-label="閉じる">×</button>
+      <h2 id="later-reason-title">まだやらないのは、嫌だから？</h2>
+      <p>今の自分との距離感を、そのまま選びます。</p>
+      <div className="later-reason-actions">
+        <button className="later-reason-avoid" onClick={onAvoid}>嫌だから</button>
+        <button className="later-reason-defer" onClick={onDefer}>今じゃない</button>
+      </div>
+    </article>
+  </div>
+);
 
 const DoLaterFocusDialog = ({ item, onClose, onOpenMemo }: { item: DoLaterItem; onClose: () => void; onOpenMemo: () => void }) => (
   <div className="dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
