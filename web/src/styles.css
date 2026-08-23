@@ -260,9 +260,14 @@ button:disabled { cursor: default; }
 .do-later-history { border-top: 0; }
 .do-later-history-list { border-top: 0; }
 .memo-list { display: grid; gap: 9px; }
-.memo-row { padding: 13px 15px; border: 0; border-radius: 14px; background: var(--card); box-shadow: 0 1px 3px rgba(60,45,25,.08); }
+.memo-row { overflow: hidden; border-radius: 14px; background: var(--card); box-shadow: 0 1px 3px rgba(60,45,25,.08); }
+.memo-row-main { display: block; width: 100%; padding: 13px 15px 9px; border: 0; background: transparent; text-align: left; }
 .memo-row strong { display: none; }
-.memo-row span { color: var(--ink); font-family: inherit; font-size: 15px; line-height: 1.65; -webkit-line-clamp: 2; }
+.memo-row-main > span { display: -webkit-box; overflow: hidden; color: var(--ink); font-family: inherit; font-size: 15px; line-height: 1.65; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.memo-dialogue-preview { padding: 0 15px 12px; border-top: 1px solid var(--line); }
+.memo-dialogue-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 9px; color: var(--muted); font-size: 10px; }
+.memo-dialogue-meta button { padding: 5px 0; border: 0; background: transparent; color: var(--primary-text); font-size: 11px; font-weight: 700; white-space: nowrap; }
+.memo-dialogue-preview p { display: -webkit-box; overflow: hidden; margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .recent-panel .empty-message { margin-top: 30px; }
 @media (max-width: 619px) { .write-panel textarea { min-height: 0; max-height: none; } }
 

@@ -164,27 +164,40 @@ const threadMetadata = async (
   const { data: entries, error: entryError } = threadIds.length === 0
     ? { data: [], error: null }
     : await admin.from("idea_thread_entries")
-      .select("thread_id,memo_id").eq("owner_id", ownerId)
+      .select("thread_id,memo_id,entry_kind,body_ciphertext,written_at").eq("owner_id", ownerId)
       .in("thread_id", threadIds).is("deleted_at", null);
   if (entryError) throw entryError;
 
   const counts = new Map<string, number>();
+  const latestReflection = new Map<string, { written_at: string; body_ciphertext: string }>();
   const byRoot = new Map<string, string>();
   const byMemo = new Map<string, string>();
   for (const thread of threads ?? []) byRoot.set(thread.root_memory_id, thread.id);
   for (const entry of entries ?? []) {
-    counts.set(entry.thread_id, (counts.get(entry.thread_id) ?? 0) + 1);
+    if (entry.entry_kind === "reflection") {
+      counts.set(entry.thread_id, (counts.get(entry.thread_id) ?? 0) + 1);
+      if (entry.body_ciphertext && (!latestReflection.has(entry.thread_id)
+        || entry.written_at > latestReflection.get(entry.thread_id)!.written_at)) {
+        latestReflection.set(entry.thread_id, {
+          written_at: entry.written_at,
+          body_ciphertext: entry.body_ciphertext
+        });
+      }
+    }
     if (entry.memo_id) byMemo.set(entry.memo_id, entry.thread_id);
   }
-  return rows.map((row) => {
+  return Promise.all(rows.map(async (row) => {
     const direct = row.memory_id.startsWith("thread:") ? row.memory_id.slice(7) : null;
     const threadId = direct ?? byRoot.get(row.memory_id) ?? byMemo.get(row.memory_id) ?? null;
+    const count = threadId ? counts.get(threadId) ?? 0 : 0;
+    const latest = threadId ? latestReflection.get(threadId) : undefined;
     return {
-      thread_id: threadId,
-      dialogue_count: threadId ? counts.get(threadId) ?? 0 : 0,
-      has_dialogue: Boolean(threadId)
+      thread_id: count > 0 ? threadId : null,
+      dialogue_count: count,
+      dialogue_preview: latest ? (await decrypt(latest.body_ciphertext)).replace(/\s+/gu, " ").trim().slice(0, 120) : null,
+      has_dialogue: count > 0
     };
-  });
+  }));
 };
 
 const recall = async (
@@ -887,7 +900,18 @@ if (route === "/search" && request.method === "POST") {
       if (attentionError) throw attentionError;
       const attention = new Map((attentionRows ?? []).map((row) => [row.memo_id, row.attention_level ?? "do_later"]));
       const decrypted = await decryptMemos(admin, ownerId, rows);
-      return json({ memos: decrypted.map((memo) => ({ ...memo, attention_level: attention.get(memo.id) ?? null })), next_cursor: null });
+      const dialogue = await threadMetadata(admin, ownerId, rows.map((row) => ({
+        memory_id: row.id,
+        source_type: "mobile_app"
+      })));
+      return json({
+        memos: decrypted.map((memo, index) => ({
+          ...memo,
+          attention_level: attention.get(memo.id) ?? null,
+          ...dialogue[index]
+        })),
+        next_cursor: null
+      });
     }
 
     if (route === "/do-later" && request.method === "GET") {

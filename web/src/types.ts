@@ -15,6 +15,7 @@ export interface RelatedMemory {
   confidence: number;
   thread_id: string | null;
   dialogue_count: number;
+  dialogue_preview: string | null;
   has_dialogue: boolean;
 }
 
@@ -34,6 +35,10 @@ export interface Memo {
   deleted_at: string | null;
   revisions: MemoRevision[];
   attention_level?: AttentionLevel | null;
+  thread_id?: string | null;
+  dialogue_count?: number;
+  dialogue_preview?: string | null;
+  has_dialogue?: boolean;
 }
 
 export interface CaptureInput {

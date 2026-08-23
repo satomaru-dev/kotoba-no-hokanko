@@ -224,6 +224,32 @@ const RelatedCards = ({
   );
 };
 
+const MemoRow = ({
+  memo,
+  onOpen,
+  onDialogue
+}: {
+  memo: Memo;
+  onOpen: () => void;
+  onDialogue: (threadId: string) => void;
+}) => (
+  <article className="memo-row">
+    <button className="memo-row-main" onClick={onOpen}>
+      <time>{formatRelativeDate(memo.captured_at)}</time>
+      <span>{memo.current_text}</span>
+    </button>
+    {DIALOGUE_BETA && memo.has_dialogue && memo.thread_id && (
+      <div className="memo-dialogue-preview">
+        <div className="memo-dialogue-meta">
+          <span>過去との対話 {memo.dialogue_count}件</span>
+          <button type="button" onClick={() => onDialogue(memo.thread_id!)}>対話を見る →</button>
+        </div>
+        {memo.dialogue_preview && <p>{memo.dialogue_preview}</p>}
+      </div>
+    )}
+  </article>
+);
+
 const ReactionMascot = ({ className }: { className: string }) => (
   <picture>
     <source media="(prefers-reduced-motion: reduce)" srcSet="./icons/icon-192.png" />
@@ -601,6 +627,14 @@ export const App = () => {
     }
     if (local) setSelected(local);
     else setSelectedMemory(memory);
+  };
+
+  const openThread = async (threadId: string) => {
+    try {
+      setIdeaThread(await getIdeaThread(threadId));
+    } catch {
+      setNotice("過去との対話を開けませんでした。");
+    }
   };
 
   const beginThread = async (memoryId: string, currentMemoId?: string) => {
@@ -1140,18 +1174,20 @@ export const App = () => {
             {showTrash ? (
               <div className="memo-list">
                 {trash.map((memo) => (
-                  <button className="memo-row" key={memo.id} onClick={() => setSelected(memo)}>
-                    <time>{formatRelativeDate(memo.captured_at)}</time>
-                    <span>{memo.current_text}</span>
-                  </button>
+                  <article className="memo-row" key={memo.id}>
+                    <button className="memo-row-main" onClick={() => setSelected(memo)}>
+                      <time>{formatRelativeDate(memo.captured_at)}</time>
+                      <span>{memo.current_text}</span>
+                    </button>
+                  </article>
                 ))}
                 {trash.length === 0 && <p className="empty-message">ゴミ箱は空です。</p>}
               </div>
             ) : (
               <>
-                {recentKeepInMind.length > 0 && <section className="recent-group"><h2 className="recent-group-title">しばらく意識しておきたい</h2><div className="memo-list">{recentKeepInMind.map((memo) => <button className="memo-row" key={memo.id} onClick={() => setSelected(memo)}><time>{formatRelativeDate(memo.captured_at)}</time><span>{memo.current_text}</span></button>)}</div></section>}
-                {recentImportant.length > 0 && <section className="recent-group"><h2 className="recent-group-title">今の自分にとって結構重要な気づき</h2><div className="memo-list">{recentImportant.map((memo) => <button className="memo-row" key={memo.id} onClick={() => setSelected(memo)}><time>{formatRelativeDate(memo.captured_at)}</time><span>{memo.current_text}</span></button>)}</div></section>}
-                {recentOther.length > 0 && <section className="recent-group"><h2 className="recent-group-title">その他のアイデア</h2><div className="memo-list">{recentOther.map((memo) => <button className="memo-row" key={memo.id} onClick={() => setSelected(memo)}><time>{formatRelativeDate(memo.captured_at)}</time><span>{memo.current_text}</span></button>)}</div></section>}
+                {recentKeepInMind.length > 0 && <section className="recent-group"><h2 className="recent-group-title">しばらく意識しておきたい</h2><div className="memo-list">{recentKeepInMind.map((memo) => <MemoRow key={memo.id} memo={memo} onOpen={() => setSelected(memo)} onDialogue={(threadId) => void openThread(threadId)} />)}</div></section>}
+                {recentImportant.length > 0 && <section className="recent-group"><h2 className="recent-group-title">今の自分にとって結構重要な気づき</h2><div className="memo-list">{recentImportant.map((memo) => <MemoRow key={memo.id} memo={memo} onOpen={() => setSelected(memo)} onDialogue={(threadId) => void openThread(threadId)} />)}</div></section>}
+                {recentOther.length > 0 && <section className="recent-group"><h2 className="recent-group-title">その他のアイデア</h2><div className="memo-list">{recentOther.map((memo) => <MemoRow key={memo.id} memo={memo} onOpen={() => setSelected(memo)} onDialogue={(threadId) => void openThread(threadId)} />)}</div></section>}
                 {recentKeepInMind.length === 0 && recentImportant.length === 0 && recentOther.length === 0 && <p className="empty-message">ここに、残した言葉が並びます。</p>}
               </>
             )}
