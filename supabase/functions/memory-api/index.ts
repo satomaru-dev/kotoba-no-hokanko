@@ -339,6 +339,7 @@ const loadDoLaterItems = async (
   ownerId: string,
   view: "active" | "resolved"
 ) => {
+  const today = jstDate(new Date());
   let query = admin.from("memo_later_items").select("*").eq("owner_id", ownerId);
   query = view === "active"
     ? query.eq("status", "active")
@@ -349,8 +350,10 @@ const loadDoLaterItems = async (
   const { data: rawItems, error } = await query.limit(100);
   if (error) throw error;
   const items = [...(rawItems ?? [])]
+    .filter((item) => view !== "active" || !item.repeat_daily || !item.repeat_next_on || item.repeat_next_on <= today)
     .sort((left, right) => {
     if (view !== "active") return (right.resolved_at ?? right.updated_at).localeCompare(left.resolved_at ?? left.updated_at);
+    if (Boolean(left.repeat_daily) !== Boolean(right.repeat_daily)) return left.repeat_daily ? -1 : 1;
     const rank = { do_later: 1, keep_in_mind: 2, important_insight: 3 } as Record<string, number>;
     const leftRank = rank[left.attention_level] ?? 1;
     const rightRank = rank[right.attention_level] ?? 1;
@@ -389,6 +392,8 @@ const loadDoLaterItems = async (
       first_step: item.first_step_ciphertext ? await decrypt(item.first_step_ciphertext) : null,
       launch_url: item.launch_url_ciphertext ? await decrypt(item.launch_url_ciphertext) : null,
       roulette_enabled: Boolean(item.roulette_enabled),
+      repeat_daily: Boolean(item.repeat_daily),
+      repeat_next_on: item.repeat_next_on ?? null,
       memo
     };
   }));
@@ -484,6 +489,15 @@ const nextMorningJst = (after: Date): Date => {
     0,
     0
   ));
+};
+
+const jstDate = (value: Date): string =>
+  new Date(value.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+const nextJstDate = (value: Date): string => {
+  const next = new Date(`${jstDate(value)}T00:00:00.000Z`);
+  next.setUTCDate(next.getUTCDate() + 1);
+  return next.toISOString().slice(0, 10);
 };
 
 const dispatchReminders = async (admin: AdminClient, ownerId: string) => {
@@ -895,10 +909,10 @@ if (route === "/search" && request.method === "POST") {
       const activeIds = rows.map((row) => row.id);
       const { data: attentionRows, error: attentionError } = activeIds.length === 0
         ? { data: [], error: null }
-        : await admin.from("memo_later_items").select("memo_id,attention_level")
+        : await admin.from("memo_later_items").select("memo_id,attention_level,repeat_daily,repeat_next_on")
           .eq("owner_id", ownerId).eq("status", "active").in("memo_id", activeIds);
       if (attentionError) throw attentionError;
-      const attention = new Map((attentionRows ?? []).map((row) => [row.memo_id, row.attention_level ?? "do_later"]));
+      const attention = new Map((attentionRows ?? []).map((row) => [row.memo_id, row]));
       const decrypted = await decryptMemos(admin, ownerId, rows);
       const dialogue = await threadMetadata(admin, ownerId, rows.map((row) => ({
         memory_id: row.id,
@@ -907,7 +921,9 @@ if (route === "/search" && request.method === "POST") {
       return json({
         memos: decrypted.map((memo, index) => ({
           ...memo,
-          attention_level: attention.get(memo.id) ?? null,
+          attention_level: attention.get(memo.id)?.attention_level ?? null,
+          repeat_daily: Boolean(attention.get(memo.id)?.repeat_daily),
+          repeat_next_on: attention.get(memo.id)?.repeat_next_on ?? null,
           ...dialogue[index]
         })),
         next_cursor: null
@@ -935,25 +951,27 @@ if (route === "/search" && request.method === "POST") {
       if (request.method === "POST") {
         const body = await request.json().catch(() => ({}));
         const attentionLevel = String(body.attention_level ?? "do_later");
+        const repeatDaily = body.repeat_daily === undefined ? undefined : Boolean(body.repeat_daily);
         if (!["do_later", "keep_in_mind", "important_insight"].includes(attentionLevel)) return json({ error: "invalid_request" }, 400);
         const { data: current, error: currentError } = await admin.from("memo_later_items")
-          .select("memo_id").eq("memo_id", memoId).eq("owner_id", ownerId).maybeSingle();
+          .select("memo_id,repeat_daily").eq("memo_id", memoId).eq("owner_id", ownerId).maybeSingle();
         if (currentError) throw currentError;
         const result = current
           ? await admin.from("memo_later_items").update({
-              status: "active", activated_at: now, deferred_at: null, bottom_order: null, manual_order: null, attention_level: attentionLevel, heavy_marked: false, updated_at: now, resolved_at: null
+              status: "active", activated_at: now, deferred_at: null, bottom_order: null, manual_order: null, attention_level: attentionLevel, heavy_marked: false, updated_at: now, resolved_at: null,
+              repeat_daily: repeatDaily ?? Boolean(current.repeat_daily), repeat_next_on: null
             }).eq("memo_id", memoId).eq("owner_id", ownerId)
           : await admin.from("memo_later_items").insert({
               memo_id: memoId, owner_id: ownerId, status: "active",
               activated_at: now, deferred_at: null, bottom_order: null, manual_order: null, attention_level: attentionLevel, heavy_marked: false, updated_at: now, resolved_at: null,
-              roulette_enabled: false
+              roulette_enabled: false, repeat_daily: repeatDaily ?? false, repeat_next_on: null
             });
         if (result.error) throw result.error;
         return json({ item: await loadDoLaterItem(admin, ownerId, memoId) }, 201);
       }
       if (request.method === "PATCH") {
         const { data: current, error: currentError } = await admin.from("memo_later_items")
-          .select("memo_id,activated_at,deferred_at,bottom_order,manual_order,attention_level,heavy_marked").eq("memo_id", memoId).eq("owner_id", ownerId).maybeSingle();
+          .select("memo_id,activated_at,deferred_at,bottom_order,manual_order,attention_level,heavy_marked,repeat_daily,repeat_next_on").eq("memo_id", memoId).eq("owner_id", ownerId).maybeSingle();
         if (currentError) throw currentError;
         if (!current) return json({ error: "not_found" }, 404);
         const body = await request.json();
@@ -992,6 +1010,7 @@ if (route === "/search" && request.method === "POST") {
           const firstStep = configuration.first_step == null ? null : String(configuration.first_step);
           const launchUrl = configuration.launch_url == null ? null : String(configuration.launch_url);
           const rouletteEnabled = Boolean(configuration.roulette_enabled);
+          const repeatDaily = configuration.repeat_daily === undefined ? Boolean(current.repeat_daily) : Boolean(configuration.repeat_daily);
           if (firstStep && firstStep.length > 500) return json({ error: "invalid_request" }, 400);
           if (launchUrl) {
             let parsedUrl: URL;
@@ -1002,6 +1021,8 @@ if (route === "/search" && request.method === "POST") {
             first_step_ciphertext: firstStep ? await encrypt(firstStep) : null,
             launch_url_ciphertext: launchUrl ? await encrypt(launchUrl) : null,
             roulette_enabled: rouletteEnabled,
+            repeat_daily: repeatDaily,
+            repeat_next_on: repeatDaily ? current.repeat_next_on : null,
             updated_at: now
           }).eq("memo_id", memoId).eq("owner_id", ownerId);
           if (error) throw error;
@@ -1011,16 +1032,19 @@ if (route === "/search" && request.method === "POST") {
         if (!["done", "later", "abandon"].includes(action)) {
           return json({ error: "invalid_request" }, 400);
         }
-        const status = action === "done" ? "done" : action === "abandon" ? "abandoned" : "active";
+        const repeatingToday = Boolean(current.repeat_daily) && (action === "done" || action === "later");
+        const status = repeatingToday ? "active" : action === "done" ? "done" : action === "abandon" ? "abandoned" : "active";
         const updates = {
           status,
           activated_at: current.activated_at,
-          deferred_at: action === "later" ? now : current.deferred_at,
-          bottom_order: action === "later" ? Date.parse(now) : current.bottom_order,
-          manual_order: action === "later" ? Date.parse(now) : current.manual_order,
-          heavy_marked: action === "later" && body.heavy_marked !== undefined ? Boolean(body.heavy_marked) : Boolean(current.heavy_marked),
+          deferred_at: repeatingToday ? null : action === "later" ? now : current.deferred_at,
+          bottom_order: repeatingToday ? current.bottom_order : action === "later" ? Date.parse(now) : current.bottom_order,
+          manual_order: repeatingToday ? current.manual_order : action === "later" ? Date.parse(now) : current.manual_order,
+          heavy_marked: repeatingToday ? false : action === "later" && body.heavy_marked !== undefined ? Boolean(body.heavy_marked) : Boolean(current.heavy_marked),
           updated_at: now,
-          resolved_at: status === "active" ? null : now
+          resolved_at: status === "active" ? null : now,
+          repeat_daily: action === "abandon" ? false : Boolean(current.repeat_daily),
+          repeat_next_on: repeatingToday ? nextJstDate(new Date(now)) : action === "abandon" ? null : current.repeat_next_on
         };
         const { error } = await admin.from("memo_later_items").update(updates)
           .eq("memo_id", memoId).eq("owner_id", ownerId);

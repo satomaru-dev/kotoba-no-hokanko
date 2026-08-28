@@ -172,10 +172,10 @@ export const listDoLater = async (view: "active" | "resolved"): Promise<DoLaterI
   return result.items;
 };
 
-export const addDoLater = async (memoId: string, attentionLevel: AttentionLevel = "do_later"): Promise<DoLaterItem> => {
+export const addDoLater = async (memoId: string, attentionLevel: AttentionLevel = "do_later", repeatDaily?: boolean): Promise<DoLaterItem> => {
   const result = await request<{ item: DoLaterItem }>(`/memos/${memoId}/do-later`, {
     method: "POST",
-    body: JSON.stringify({ attention_level: attentionLevel })
+    body: JSON.stringify({ attention_level: attentionLevel, ...(repeatDaily === undefined ? {} : { repeat_daily: repeatDaily }) })
   });
   return result.item;
 };

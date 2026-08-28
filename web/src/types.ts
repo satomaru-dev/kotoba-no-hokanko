@@ -39,6 +39,8 @@ export interface Memo {
   dialogue_count?: number;
   dialogue_preview?: string | null;
   has_dialogue?: boolean;
+  repeat_daily?: boolean;
+  repeat_next_on?: string | null;
 }
 
 export interface CaptureInput {
@@ -121,6 +123,8 @@ export interface DoLaterItem {
   first_step: string | null;
   launch_url: string | null;
   roulette_enabled: boolean;
+  repeat_daily: boolean;
+  repeat_next_on: string | null;
   memo: Memo;
 }
 
@@ -128,6 +132,7 @@ export interface DoLaterConfiguration {
   first_step: string | null;
   launch_url: string | null;
   roulette_enabled: boolean;
+  repeat_daily?: boolean;
 }
 
 export interface WorkspaceSummary {

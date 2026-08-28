@@ -38,6 +38,8 @@ export interface DoLaterItem {
   first_step: string | null;
   launch_url: string | null;
   roulette_enabled: boolean;
+  repeat_daily: boolean;
+  repeat_next_on: string | null;
   memo: CapturedMemo;
 }
 
@@ -55,13 +57,28 @@ interface StoredDoLaterItem {
   first_step: string | null;
   launch_url: string | null;
   roulette_enabled: boolean;
+  repeat_daily: boolean;
+  repeat_next_on: string | null;
 }
 
 export interface DoLaterConfiguration {
   first_step: string | null;
   launch_url: string | null;
   roulette_enabled: boolean;
+  repeat_daily?: boolean;
 }
+
+const jstDate = (value: string | Date): string => {
+  const date = typeof value === "string" ? new Date(value) : value;
+  return new Date(date.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+};
+
+const nextJstDate = (value: string | Date): string => {
+  const date = jstDate(value);
+  const next = new Date(`${date}T00:00:00.000Z`);
+  next.setUTCDate(next.getUTCDate() + 1);
+  return next.toISOString().slice(0, 10);
+};
 
 export interface SearchTerm {
   text: string;
@@ -112,6 +129,8 @@ export class CaptureStore {
         first_step: null,
         launch_url: null,
         roulette_enabled: false,
+        repeat_daily: false,
+        repeat_next_on: null,
         ...(item as Partial<StoredDoLaterItem>)
       } as StoredDoLaterItem]));
       for (const memo of memos.filter((item) => !item.deleted_at)) await this.index(memo);
@@ -222,12 +241,15 @@ export class CaptureStore {
   }
 
   listDoLater(view: "active" | "resolved"): DoLaterItem[] {
+    const today = jstDate(new Date());
     return [...this.doLater.values()]
       .filter((item) => view === "active" ? item.status === "active" : item.status !== "active")
+      .filter((item) => view !== "active" || !item.repeat_daily || !item.repeat_next_on || item.repeat_next_on <= today)
       .map((item) => ({ ...item, memo: this.memos.get(item.memo_id)! }))
       .filter((item) => item.memo && !item.memo.deleted_at)
       .sort((left, right) => {
         if (view === "active") {
+          if (left.repeat_daily !== right.repeat_daily) return left.repeat_daily ? -1 : 1;
           const rank = { do_later: 1, keep_in_mind: 2, important_insight: 3 } as const;
           const leftRank = rank[left.attention_level] ?? 1;
           const rightRank = rank[right.attention_level] ?? 1;
@@ -248,7 +270,7 @@ export class CaptureStore {
       });
   }
 
-  async addDoLater(id: string, attentionLevelOrNow: AttentionLevel | string = "do_later", now = new Date().toISOString()): Promise<DoLaterItem | null> {
+  async addDoLater(id: string, attentionLevelOrNow: AttentionLevel | string = "do_later", now = new Date().toISOString(), repeatDaily?: boolean): Promise<DoLaterItem | null> {
     const legacyTimestamp = attentionLevelOrNow.includes("T");
     const attentionLevel: AttentionLevel = legacyTimestamp ? "do_later" : attentionLevelOrNow as AttentionLevel;
     if (legacyTimestamp) now = attentionLevelOrNow;
@@ -263,7 +285,9 @@ export class CaptureStore {
         attention_level: "do_later",
         first_step: null,
         launch_url: null,
-        roulette_enabled: false
+        roulette_enabled: false,
+        repeat_daily: false,
+        repeat_next_on: null
       }),
       memo_id: id,
       status: "active",
@@ -276,6 +300,8 @@ export class CaptureStore {
       updated_at: now,
       resolved_at: null
     };
+    if (repeatDaily !== undefined) item.repeat_daily = repeatDaily;
+    if (!item.repeat_daily) item.repeat_next_on = null;
     this.doLater.set(id, item);
     await this.persist();
     return { ...item, memo };
@@ -300,7 +326,8 @@ export class CaptureStore {
     const memo = this.memos.get(id);
     const current = this.doLater.get(id);
     if (!memo || memo.deleted_at || !current) return null;
-    const status: DoLaterStatus = action === "done"
+    const repeatingToday = current.repeat_daily && (action === "done" || action === "later");
+    const status: DoLaterStatus = repeatingToday ? "active" : action === "done"
       ? "done"
       : action === "abandon"
         ? "abandoned"
@@ -309,12 +336,14 @@ export class CaptureStore {
       ...current,
       status,
       activated_at: current.activated_at,
-      deferred_at: action === "later" ? now : current.deferred_at,
-      bottom_order: action === "later" ? Date.parse(now) : current.bottom_order,
-      manual_order: action === "later" ? Math.max(-1, ...[...this.doLater.values()].filter((item) => item.status === "active" && item.attention_level === "do_later" && item.memo_id !== id).map((item) => item.manual_order ?? -1)) + 1 : current.manual_order,
-      heavy_marked: action === "later" && typeof heavyMarkedOrNow === "boolean" ? heavyMarkedOrNow : current.heavy_marked,
+      deferred_at: repeatingToday ? null : action === "later" ? now : current.deferred_at,
+      bottom_order: repeatingToday ? current.bottom_order : action === "later" ? Date.parse(now) : current.bottom_order,
+      manual_order: repeatingToday ? current.manual_order : action === "later" ? Math.max(-1, ...[...this.doLater.values()].filter((item) => item.status === "active" && item.attention_level === "do_later" && item.memo_id !== id).map((item) => item.manual_order ?? -1)) + 1 : current.manual_order,
+      heavy_marked: repeatingToday ? false : action === "later" && typeof heavyMarkedOrNow === "boolean" ? heavyMarkedOrNow : current.heavy_marked,
       updated_at: now,
-      resolved_at: status === "active" ? null : now
+      resolved_at: status === "active" ? null : now,
+      repeat_next_on: repeatingToday ? nextJstDate(now) : action === "abandon" ? null : current.repeat_next_on,
+      repeat_daily: action === "abandon" ? false : current.repeat_daily
     };
     this.doLater.set(id, item);
     await this.persist();
@@ -347,7 +376,7 @@ export class CaptureStore {
     const memo = this.memos.get(id);
     const current = this.doLater.get(id);
     if (!memo || memo.deleted_at || !current) return null;
-    const item: StoredDoLaterItem = { ...current, ...configuration, updated_at: now };
+    const item: StoredDoLaterItem = { ...current, ...configuration, repeat_next_on: configuration.repeat_daily === undefined ? current.repeat_next_on : configuration.repeat_daily ? current.repeat_next_on : null, updated_at: now };
     this.doLater.set(id, item);
     await this.persist();
     return { ...item, memo };

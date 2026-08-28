@@ -509,6 +509,12 @@ export const App = () => {
     if (tab === "recent" && (!cloudMode || session)) void refreshMemos();
   }, [tab, session, refreshMemos]);
   useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (tab === "do-later" && (!cloudMode || session)) void refreshDoLater();
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, [tab, session, refreshDoLater]);
+  useEffect(() => {
     if (tab !== "search" || (cloudMode && !session)) return;
     void getSearchInsights().then((value) => {
       setSearchInsights(value);
@@ -663,10 +669,10 @@ export const App = () => {
     }
   };
 
-  const chooseAttention = async (attentionLevel: AttentionLevel) => {
+  const chooseAttention = async (attentionLevel: AttentionLevel, repeatDaily: boolean) => {
     if (!lastSavedMemo) return;
     try {
-      await addDoLater(lastSavedMemo.id, attentionLevel);
+      await addDoLater(lastSavedMemo.id, attentionLevel, repeatDaily);
       await Promise.all([refreshDoLater(), refreshMemos()]);
       setShowReminder(false);
       setNotice(`「${attentionLabel(attentionLevel)}」に置きました。`);
@@ -698,9 +704,9 @@ export const App = () => {
     }
   };
 
-  const setAttentionForMemo = async (memo: Memo, attentionLevel: AttentionLevel) => {
+  const setAttentionForMemo = async (memo: Memo, attentionLevel: AttentionLevel, repeatDaily = false) => {
     try {
-      await addDoLater(memo.id, attentionLevel);
+      await addDoLater(memo.id, attentionLevel, repeatDaily);
       await Promise.all([refreshDoLater(), refreshMemos()]);
       setNotice(`「${attentionLabel(attentionLevel)}」に変更しました。`);
       triggerReaction();
@@ -721,7 +727,7 @@ export const App = () => {
   const actOnDoLater = async (memoId: string, action: DoLaterAction, heavyMarked?: boolean) => {
     try {
       await updateDoLater(memoId, action, { heavy_marked: heavyMarked });
-      if (action === "later") {
+      if (action === "later" && !doLaterActive.find((item) => item.memo_id === memoId)?.repeat_daily) {
         moveDoLaterToBottom(memoId);
         setNotice("一覧の末尾へ移しました。");
         triggerReaction();
@@ -769,6 +775,7 @@ export const App = () => {
     first_step: string | null;
     launch_url: string | null;
     roulette_enabled: boolean;
+    repeat_daily?: boolean;
   }) => {
     try {
       await configureDoLater(item.memo_id, configuration);
@@ -867,8 +874,9 @@ export const App = () => {
   };
 
   const openDoLater = (item: DoLaterItem) => {
+    const memo = { ...item.memo, repeat_daily: item.repeat_daily, repeat_next_on: item.repeat_next_on };
     if (!START_ASSIST_BETA) {
-      setSelected(item.memo);
+      setSelected(memo);
       return;
     }
     if (item.launch_url) {
@@ -1002,8 +1010,8 @@ export const App = () => {
               </div>
             )}
             {showReminder && lastSavedMemo && (
-              <AttentionChooser
-                onSelect={(level) => void chooseAttention(level)}
+      <AttentionChooser
+                onSelect={(level, repeatDaily) => void chooseAttention(level, repeatDaily ?? false)}
                 onClose={() => setShowReminder(false)}
               />
             )}
@@ -1071,7 +1079,7 @@ export const App = () => {
                   )}
                   <div className="do-later-actions">
                     <button className="do-later-done" onClick={() => void actOnDoLater(item.memo_id, "done")}>やってあげた。</button>
-                    <button className="do-later-later" onClick={() => askAboutLater(item.memo_id)}>まだやらない</button>
+                    <button className="do-later-later" onClick={() => item.repeat_daily ? void actOnDoLater(item.memo_id, "later") : askAboutLater(item.memo_id)}>{item.repeat_daily ? "今日はやらない" : "まだやらない"}</button>
                     <button className="do-later-abandon" onClick={() => void actOnDoLater(item.memo_id, "abandon")}>やっぱりやめる</button>
                   </div>
                   </article>
@@ -1216,7 +1224,7 @@ export const App = () => {
           onClose={() => setSelected(null)}
           onDialogue={DIALOGUE_BETA ? () => void beginThread(selected.id) : undefined}
           onDoLater={!selected.deleted_at ? () => void markDoLater(selected) : undefined}
-          onAttention={!selected.deleted_at ? (level) => void setAttentionForMemo(selected, level) : undefined}
+          onAttention={!selected.deleted_at ? (level, repeatDaily) => void setAttentionForMemo(selected, level, repeatDaily) : undefined}
           onChanged={(kind, memo) => applyMemoMutation(kind, memo, selected)}
           onError={(message) => setNotice(message)}
         />
@@ -1412,13 +1420,14 @@ const DoLaterFocusDialog = ({ item, onClose, onOpenMemo }: { item: DoLaterItem; 
   </div>
 );
 
-const AttentionChooser = ({ onSelect, onClose }: { onSelect: (level: AttentionLevel) => void; onClose: () => void }) => (
+const AttentionChooser = ({ onSelect, onClose, initialRepeatDaily = false }: { onSelect: (level: AttentionLevel, repeatDaily?: boolean) => void; onClose: () => void; initialRepeatDaily?: boolean }) => (
   <section className="reminder-chooser attention-chooser">
     <div><strong>{"\u3053\u306e\u8a00\u8449\u3092\u3001\u3069\u3093\u306a\u3075\u3046\u306b\u6b8b\u3057\u3066\u304a\u304f\uff1f"}</strong><button aria-label="close" onClick={onClose}>x</button></div>
     <p>{"\u65e5\u6642\u3067\u306f\u306a\u304f\u3001\u4eca\u306e\u81ea\u5206\u3068\u306e\u8ddd\u96e2\u611f\u3092\u9078\u3073\u307e\u3059\u3002"}</p>
+    <label className="repeat-daily-option"><input type="checkbox" id="repeat-daily-setting" defaultChecked={initialRepeatDaily} /> 毎日くり返す</label>
     <div className="attention-options">
-      <button onClick={() => onSelect("do_later")}><strong>{"\u3042\u3068\u3067\u3084\u308b"}</strong><small>{"\u884c\u52d5\u306b\u3064\u306a\u304c\u308a\u305d\u3046"}</small></button>
-      <button onClick={() => onSelect("keep_in_mind")}><strong>{"\u3057\u3070\u3089\u304f\u898b\u3048\u308b\u3068\u3053\u308d\u306b\u7f6e\u3044\u3066\u304a\u304d\u305f\u3044"}</strong><small>{"\u4eca\u306e\u81ea\u5206\u306e\u4e2d\u306b\u7f6e\u3044\u3066\u304a\u304f"}</small></button>
+      <button onClick={() => onSelect("do_later", (document.getElementById("repeat-daily-setting") as HTMLInputElement)?.checked ?? false)}><strong>{"\u3042\u3068\u3067\u3084\u308b"}</strong><small>{"\u884c\u52d5\u306b\u3064\u306a\u304c\u308a\u305d\u3046"}</small></button>
+      <button onClick={() => onSelect("keep_in_mind", false)}><strong>{"\u3057\u3070\u3089\u304f\u898b\u3048\u308b\u3068\u3053\u308d\u306b\u7f6e\u3044\u3066\u304a\u304d\u305f\u3044"}</strong><small>{"\u4eca\u306e\u81ea\u5206\u306e\u4e2d\u306b\u7f6e\u3044\u3066\u304a\u304f"}</small></button>
       <button onClick={() => onSelect("important_insight")}><strong>{"\u4eca\u306e\u81ea\u5206\u306b\u3068\u3063\u3066\u7d50\u69cb\u91cd\u8981\u306a\u6c17\u3065\u304d"}</strong><small>{"\u512a\u5148\u7684\u306b\u76ee\u306b\u5165\u308c\u308b"}</small></button>
     </div>
   </section>
@@ -1517,7 +1526,7 @@ const MemoDialog = ({
   onError: (message: string) => void;
   onDialogue?: () => void;
   onDoLater?: () => void;
-  onAttention?: (level: AttentionLevel) => void;
+  onAttention?: (level: AttentionLevel, repeatDaily?: boolean) => void;
 }) => {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(memo.current_text);
@@ -1593,7 +1602,7 @@ const MemoDialog = ({
         {onAttention && !editing && (
           <>
             <button className="do-later-dialog-button" onClick={() => setAttentionVisible((value) => !value)}>重要度を変える</button>
-            {attentionVisible && <AttentionChooser onSelect={(level) => { setAttentionVisible(false); onAttention(level); }} onClose={() => setAttentionVisible(false)} />}
+            {attentionVisible && <AttentionChooser initialRepeatDaily={Boolean(memo.repeat_daily)} onSelect={(level, repeatDaily) => { setAttentionVisible(false); onAttention(level, repeatDaily); }} onClose={() => setAttentionVisible(false)} />}
           </>
         )}
         <div className="dialog-actions">

@@ -149,8 +149,8 @@ app.get("/api/do-later", (request: Request, response: Response) => {
 
 app.post("/api/memos/:id/do-later", async (request: Request, response: Response, next: NextFunction) => {
   try {
-    const body = request.body as { attention_level?: string };
-    const item = await captures.addDoLater(String(request.params.id ?? ""), z.enum(["do_later", "keep_in_mind", "important_insight"]).catch("do_later").parse(body.attention_level));
+    const body = request.body as { attention_level?: string; repeat_daily?: boolean };
+    const item = await captures.addDoLater(String(request.params.id ?? ""), z.enum(["do_later", "keep_in_mind", "important_insight"]).catch("do_later").parse(body.attention_level), new Date().toISOString(), z.boolean().optional().parse(body.repeat_daily));
     if (!item) {
       response.status(404).json({ error: "not_found" });
       return;
@@ -185,7 +185,8 @@ app.patch("/api/memos/:id/do-later", async (request: Request, response: Response
       ? await captures.configureDoLater(id, z.object({
           first_step: z.string().max(500).nullable(),
           launch_url: z.string().url().refine((value) => /^https?:$/.test(new URL(value).protocol)).nullable(),
-          roulette_enabled: z.boolean()
+          roulette_enabled: z.boolean(),
+          repeat_daily: z.boolean().optional()
         }).parse(body.configuration))
       : await captures.updateDoLater(id, z.object({
           action: z.enum(["done", "later", "abandon"]),
