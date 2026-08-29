@@ -22,6 +22,7 @@ import {
   getSearchInsights,
   listDueReminders,
   listDoLater,
+  listDoLaterDeferrals,
   listMemos,
   markReminderOpened,
   openWorkspace,
@@ -47,6 +48,7 @@ import {
   removeQueuedCapture,
   removeQueuedReminder
 } from "./offline";
+import { deferralsToCsv, jstDateForFilename } from "./do-later-export";
 import { mergeMemo, prependMemo, removeDoLaterMemo, removeMemo, replaceDoLaterMemo, replaceMemo } from "./memo-state";
 import type {
   AttentionLevel,
@@ -724,24 +726,47 @@ export const App = () => {
     });
   };
 
-  const actOnDoLater = async (memoId: string, action: DoLaterAction, heavyMarked?: boolean) => {
+  const actOnDoLater = async (memoId: string, action: DoLaterAction, reason?: string): Promise<boolean> => {
     try {
-      await updateDoLater(memoId, action, { heavy_marked: heavyMarked });
+      await updateDoLater(memoId, action, reason === undefined ? undefined : { reason });
       if (action === "later" && !doLaterActive.find((item) => item.memo_id === memoId)?.repeat_daily) {
         moveDoLaterToBottom(memoId);
         setNotice("一覧の末尾へ移しました。");
         triggerReaction();
-        return;
+        return true;
       }
       await refreshDoLater();
       triggerReaction();
+      return true;
     } catch {
       setNotice("今は変更できませんでした。元のメモは変わっていません。");
+      return false;
     }
   };
 
   const askAboutLater = (memoId: string) => {
     setPendingLaterId(memoId);
+  };
+
+  const exportDoLaterDeferrals = async () => {
+    try {
+      const items = await listDoLaterDeferrals();
+      if (items.length === 0) {
+        setNotice("書き出せる「まだやらない」理由は、まだありません。");
+        return;
+      }
+      const url = URL.createObjectURL(new Blob([deferralsToCsv(items)], { type: "text/csv;charset=utf-8" }));
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `まだやらない理由-${jstDateForFilename()}.csv`;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      setNotice("「まだやらない」理由を書き出しました。");
+    } catch {
+      setNotice("今は理由を書き出せませんでした。記録は残っています。");
+    }
   };
 
   const reorderSensors = useSensors(
@@ -1109,7 +1134,11 @@ export const App = () => {
                 <span>これまで</span><span>{showDoLaterHistory ? "−" : "＋"}</span>
               </button>
               {showDoLaterHistory && (
-                <div className="do-later-history-list">
+                <div className="do-later-history-content">
+                  <button className="deferral-export-button" type="button" onClick={() => void exportDoLaterDeferrals()}>
+                    まだやらない理由を書き出す
+                  </button>
+                  <div className="do-later-history-list">
                   {doLaterResolved.map((item) => (
                     <button key={item.memo_id} onClick={() => setSelected(item.memo)}>
                       <span className={`do-later-result ${item.status}`}>
@@ -1122,6 +1151,7 @@ export const App = () => {
                   {doLaterResolved.length === 0 && (
                     <p className="empty-message">これまでの結果は、まだありません。</p>
                   )}
+                  </div>
                 </div>
               )}
             </section>
@@ -1278,15 +1308,11 @@ export const App = () => {
       {pendingLaterId && (
         <LaterReasonDialog
           onClose={() => setPendingLaterId(null)}
-          onIntentional={() => {
+          onSubmit={async (reason) => {
             const memoId = pendingLaterId;
-            setPendingLaterId(null);
-            void actOnDoLater(memoId, "later", false);
-          }}
-          onHeavy={() => {
-            const memoId = pendingLaterId;
-            setPendingLaterId(null);
-            void actOnDoLater(memoId, "later", true);
+            const saved = await actOnDoLater(memoId, "later", reason);
+            if (saved) setPendingLaterId(null);
+            return saved;
           }}
         />
       )}
@@ -1389,25 +1415,46 @@ const DoLaterSetupDialog = ({
 
 const LaterReasonDialog = ({
   onClose,
-  onIntentional,
-  onHeavy
+  onSubmit
 }: {
   onClose: () => void;
-  onIntentional: () => void;
-  onHeavy: () => void;
-}) => (
-  <div className="dialog-backdrop later-reason-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-    <article className="later-reason-dialog" role="dialog" aria-modal="true" aria-labelledby="later-reason-title">
-      <button className="close-button" onClick={onClose} aria-label="閉じる">×</button>
-      <h2 id="later-reason-title">今の「まだやらない」は、どんな感じ？</h2>
-      <p>今の自分との距離感を、そのまま選びます。</p>
-      <div className="later-reason-actions">
-        <button className="later-reason-defer" onClick={onIntentional}>今はやらないと決めている</button>
-        <button className="later-reason-heavy" onClick={onHeavy}>考えると気持ちが重い</button>
-      </div>
-    </article>
-  </div>
-);
+  onSubmit: (reason: string) => Promise<boolean>;
+}) => {
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    const trimmed = reason.trim();
+    if (!trimmed || busy) return;
+    setBusy(true);
+    const saved = await onSubmit(trimmed);
+    if (!saved) setBusy(false);
+  };
+  const close = () => {
+    if (!busy) onClose();
+  };
+  return (
+    <div className="dialog-backdrop later-reason-backdrop" onMouseDown={(event) => event.target === event.currentTarget && close()}>
+      <article className="later-reason-dialog" role="dialog" aria-modal="true" aria-labelledby="later-reason-title">
+        <button className="close-button" disabled={busy} onClick={close} aria-label="閉じる">×</button>
+        <h2 id="later-reason-title">今は、どうしてまだやらない？</h2>
+        <p>今の自分の理由を、そのまま残します。</p>
+        <textarea
+          autoFocus
+          maxLength={1000}
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          placeholder="例：今日は考える余裕がない／必要な情報がまだ揃っていない"
+        />
+        <div className="later-reason-footer">
+          <small>{reason.length}/1000</small>
+          <button className="later-reason-defer" disabled={!reason.trim() || busy} onClick={() => void submit()}>
+            {busy ? "残しています…" : "この理由で、まだやらない"}
+          </button>
+        </div>
+      </article>
+    </div>
+  );
+};
 
 const DoLaterFocusDialog = ({ item, onClose, onOpenMemo }: { item: DoLaterItem; onClose: () => void; onOpenMemo: () => void }) => (
   <div className="dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>

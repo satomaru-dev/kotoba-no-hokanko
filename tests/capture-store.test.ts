@@ -118,7 +118,7 @@ describe("capture store", () => {
     await store.capture(secondId, "second", "2026-08-01T01:00:00.000Z");
     await store.addDoLater(firstId, "2026-08-01T02:00:00.000Z");
     await store.addDoLater(secondId, "2026-08-01T03:00:00.000Z");
-    await store.updateDoLater(secondId, "later", "2026-08-01T04:00:00.000Z");
+    await store.updateDoLater(secondId, "later", { reason: "今日は時間が足りない" }, "2026-08-01T04:00:00.000Z");
     expect(store.listDoLater("active").map((item) => item.memo_id)).toEqual([firstId, secondId]);
   });
 
@@ -157,16 +157,44 @@ describe("capture store", () => {
     expect(store.listDoLater("active").map((item) => item.memo_id)).toContain(ids[1]);
   });
 
-  it("persists and resets the heavy mark", async () => {
+  it("records every deferral reason with the memo text at that time", async () => {
     const { store } = await makeStore();
     const id = "cccccccc-cccc-4ccc-8ccc-ccccccccccc1";
-    await store.capture(id, "気持ちが重い言葉", "2026-08-02T00:00:00.000Z");
+    await store.capture(id, "年金や、相続の勉強をする", "2026-08-02T00:00:00.000Z");
     await store.addDoLater(id, "2026-08-02T01:00:00.000Z");
-    await store.updateDoLater(id, "later", true, "2026-08-02T02:00:00.000Z");
-    expect(store.listDoLater("active")[0]?.heavy_marked).toBe(true);
-    await store.updateDoLater(id, "done", "2026-08-02T03:00:00.000Z");
-    await store.addDoLater(id, "2026-08-02T04:00:00.000Z");
+    expect(await store.updateDoLater(id, "later", { reason: " 今日は考える余裕がない " }, "2026-08-02T02:00:00.000Z")).not.toBeNull();
+    await store.update(id, "年金の本を一章読む", "年金の本を一章読む");
+    expect(await store.updateDoLater(id, "later", { reason: "必要な資料がまだない" }, "2026-08-02T04:00:00.000Z")).not.toBeNull();
+
+    expect(store.listDoLaterDeferrals()).toEqual([
+      expect.objectContaining({
+        memo_id: id,
+        reason: "今日は考える余裕がない",
+        memo_text: "年金や、相続の勉強をする",
+        deferred_at: "2026-08-02T02:00:00.000Z"
+      }),
+      expect.objectContaining({
+        memo_id: id,
+        reason: "必要な資料がまだない",
+        memo_text: "年金の本を一章読む",
+        deferred_at: "2026-08-02T04:00:00.000Z"
+      })
+    ]);
     expect(store.listDoLater("active")[0]?.heavy_marked).toBe(false);
+  });
+
+  it("requires a reason for a normal deferral but not for a daily repeat", async () => {
+    const { store } = await makeStore();
+    const normalId = "dddddddd-dddd-4ddd-8ddd-ddddddddddd1";
+    const repeatId = "dddddddd-dddd-4ddd-8ddd-ddddddddddd2";
+    await store.capture(normalId, "通常項目", "2026-08-02T00:00:00.000Z");
+    await store.capture(repeatId, "毎日の項目", "2026-08-02T00:00:00.000Z");
+    await store.addDoLater(normalId, "do_later", "2026-08-02T01:00:00.000Z", false);
+    await store.addDoLater(repeatId, "do_later", "2026-08-02T01:00:00.000Z", true);
+
+    expect(await store.updateDoLater(normalId, "later", { reason: "   " }, "2026-08-02T02:00:00.000Z")).toBeNull();
+    expect(await store.updateDoLater(repeatId, "later", undefined, "2026-08-02T02:00:00.000Z")).not.toBeNull();
+    expect(store.listDoLaterDeferrals()).toHaveLength(0);
   });
 
   it("records normalized search insights without changing memo data", async () => {

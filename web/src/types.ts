@@ -128,6 +128,14 @@ export interface DoLaterItem {
   memo: Memo;
 }
 
+export interface DoLaterDeferral {
+  id: string;
+  memo_id: string;
+  reason: string;
+  memo_text: string;
+  deferred_at: string;
+}
+
 export interface DoLaterConfiguration {
   first_step: string | null;
   launch_url: string | null;

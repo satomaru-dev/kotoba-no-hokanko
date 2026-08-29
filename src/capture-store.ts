@@ -43,6 +43,16 @@ export interface DoLaterItem {
   memo: CapturedMemo;
 }
 
+export interface DoLaterDeferral {
+  id: string;
+  memo_id: string;
+  reason: string;
+  memo_text: string;
+  deferred_at: string;
+}
+
+interface StoredDoLaterDeferral extends DoLaterDeferral {}
+
 interface StoredDoLaterItem {
   memo_id: string;
   status: DoLaterStatus;
@@ -94,6 +104,7 @@ export interface SearchInsights {
 interface StoredCaptureData {
   memos: CapturedMemo[];
   do_later: StoredDoLaterItem[];
+  do_later_deferrals?: StoredDoLaterDeferral[];
   search_insights?: SearchTerm[];
 }
 
@@ -105,6 +116,7 @@ const titleFromText = (text: string): string => {
 export class CaptureStore {
   private memos = new Map<string, CapturedMemo>();
   private doLater = new Map<string, StoredDoLaterItem>();
+  private doLaterDeferrals: StoredDoLaterDeferral[] = [];
   private searchInsights = new Map<string, SearchTerm>();
 
   constructor(
@@ -117,6 +129,7 @@ export class CaptureStore {
       const parsed = JSON.parse(await fs.readFile(this.filePath, "utf8")) as CapturedMemo[] | StoredCaptureData;
       const memos = Array.isArray(parsed) ? parsed : parsed.memos;
       const doLater = Array.isArray(parsed) ? [] : (parsed.do_later ?? []);
+      const doLaterDeferrals = Array.isArray(parsed) ? [] : (parsed.do_later_deferrals ?? []);
       const searchInsights = Array.isArray(parsed) ? [] : (parsed.search_insights ?? []);
       this.memos = new Map(memos.map((memo) => [memo.id, memo]));
       this.searchInsights = new Map(searchInsights.map((item) => [item.text, item]));
@@ -133,6 +146,7 @@ export class CaptureStore {
         repeat_next_on: null,
         ...(item as Partial<StoredDoLaterItem>)
       } as StoredDoLaterItem]));
+      this.doLaterDeferrals = doLaterDeferrals;
       for (const memo of memos.filter((item) => !item.deleted_at)) await this.index(memo);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
@@ -146,6 +160,7 @@ export class CaptureStore {
     const data: StoredCaptureData = {
       memos: [...this.memos.values()],
       do_later: [...this.doLater.values()],
+      do_later_deferrals: this.doLaterDeferrals,
       search_insights: [...this.searchInsights.values()]
     };
     await fs.writeFile(temporary, JSON.stringify(data, null, 2), "utf8");
@@ -270,6 +285,10 @@ export class CaptureStore {
       });
   }
 
+  listDoLaterDeferrals(): DoLaterDeferral[] {
+    return [...this.doLaterDeferrals].sort((left, right) => left.deferred_at.localeCompare(right.deferred_at));
+  }
+
   async addDoLater(id: string, attentionLevelOrNow: AttentionLevel | string = "do_later", now = new Date().toISOString(), repeatDaily?: boolean): Promise<DoLaterItem | null> {
     const legacyTimestamp = attentionLevelOrNow.includes("T");
     const attentionLevel: AttentionLevel = legacyTimestamp ? "do_later" : attentionLevelOrNow as AttentionLevel;
@@ -320,13 +339,15 @@ export class CaptureStore {
   async updateDoLater(
     id: string,
     action: "done" | "later" | "abandon",
-    heavyMarkedOrNow?: boolean | string,
-    now = typeof heavyMarkedOrNow === "string" ? heavyMarkedOrNow : new Date().toISOString()
+    optionsOrNow?: { reason?: string; heavy_marked?: boolean } | string,
+    now = typeof optionsOrNow === "string" ? optionsOrNow : new Date().toISOString()
   ): Promise<DoLaterItem | null> {
     const memo = this.memos.get(id);
     const current = this.doLater.get(id);
     if (!memo || memo.deleted_at || !current) return null;
     const repeatingToday = current.repeat_daily && (action === "done" || action === "later");
+    const reason = typeof optionsOrNow === "object" ? optionsOrNow.reason?.trim() ?? "" : "";
+    if (action === "later" && !repeatingToday && (reason.length < 1 || reason.length > 1000)) return null;
     const status: DoLaterStatus = repeatingToday ? "active" : action === "done"
       ? "done"
       : action === "abandon"
@@ -339,13 +360,22 @@ export class CaptureStore {
       deferred_at: repeatingToday ? null : action === "later" ? now : current.deferred_at,
       bottom_order: repeatingToday ? current.bottom_order : action === "later" ? Date.parse(now) : current.bottom_order,
       manual_order: repeatingToday ? current.manual_order : action === "later" ? Math.max(-1, ...[...this.doLater.values()].filter((item) => item.status === "active" && item.attention_level === "do_later" && item.memo_id !== id).map((item) => item.manual_order ?? -1)) + 1 : current.manual_order,
-      heavy_marked: repeatingToday ? false : action === "later" && typeof heavyMarkedOrNow === "boolean" ? heavyMarkedOrNow : current.heavy_marked,
+      heavy_marked: action === "later" ? false : current.heavy_marked,
       updated_at: now,
       resolved_at: status === "active" ? null : now,
       repeat_next_on: repeatingToday ? nextJstDate(now) : action === "abandon" ? null : current.repeat_next_on,
       repeat_daily: action === "abandon" ? false : current.repeat_daily
     };
     this.doLater.set(id, item);
+    if (action === "later" && !repeatingToday) {
+      this.doLaterDeferrals.push({
+        id: crypto.randomUUID(),
+        memo_id: id,
+        reason,
+        memo_text: memo.current_text,
+        deferred_at: now
+      });
+    }
     await this.persist();
     return { ...item, memo };
   }

@@ -147,6 +147,10 @@ app.get("/api/do-later", (request: Request, response: Response) => {
   response.json({ items: captures.listDoLater(view) });
 });
 
+app.get("/api/do-later/deferrals", (_request: Request, response: Response) => {
+  response.json({ items: captures.listDoLaterDeferrals() });
+});
+
 app.post("/api/memos/:id/do-later", async (request: Request, response: Response, next: NextFunction) => {
   try {
     const body = request.body as { attention_level?: string; repeat_daily?: boolean };
@@ -177,8 +181,14 @@ app.patch("/api/memos/:id/do-later", async (request: Request, response: Response
 
 app.patch("/api/memos/:id/do-later", async (request: Request, response: Response, next: NextFunction) => {
   try {
-    const body = request.body as { action?: string; configuration?: unknown; attention_level?: string; heavy_marked?: boolean };
+    const body = request.body as { action?: string; configuration?: unknown; attention_level?: string; reason?: string };
     const id = String(request.params.id ?? "");
+    const actionInput = body.attention_level === undefined && body.configuration === undefined
+      ? z.object({
+          action: z.enum(["done", "later", "abandon"]),
+          reason: z.string().max(1000).optional()
+        }).parse(body)
+      : null;
     const item = body.attention_level !== undefined
       ? await captures.updateAttentionLevel(id, z.enum(["do_later", "keep_in_mind", "important_insight"]).parse(body.attention_level))
       : body.configuration !== undefined
@@ -188,12 +198,9 @@ app.patch("/api/memos/:id/do-later", async (request: Request, response: Response
           roulette_enabled: z.boolean(),
           repeat_daily: z.boolean().optional()
         }).parse(body.configuration))
-      : await captures.updateDoLater(id, z.object({
-          action: z.enum(["done", "later", "abandon"]),
-          heavy_marked: z.boolean().optional()
-        }).parse(body).action, body.heavy_marked);
+      : await captures.updateDoLater(id, actionInput!.action, { reason: actionInput!.reason });
     if (!item) {
-      response.status(404).json({ error: "not_found" });
+      response.status(body.action === "later" ? 400 : 404).json({ error: body.action === "later" ? "invalid_reason" : "not_found" });
       return;
     }
     response.json({ item });

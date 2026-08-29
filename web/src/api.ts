@@ -5,6 +5,7 @@ import type {
   CaptureResponse,
   DoLaterAction,
   DoLaterConfiguration,
+  DoLaterDeferral,
   DoLaterItem,
   FeedbackVerdict,
   IdeaThread,
@@ -172,6 +173,11 @@ export const listDoLater = async (view: "active" | "resolved"): Promise<DoLaterI
   return result.items;
 };
 
+export const listDoLaterDeferrals = async (): Promise<DoLaterDeferral[]> => {
+  const result = await request<{ items: DoLaterDeferral[] }>("/do-later/deferrals");
+  return result.items;
+};
+
 export const addDoLater = async (memoId: string, attentionLevel: AttentionLevel = "do_later", repeatDaily?: boolean): Promise<DoLaterItem> => {
   const result = await request<{ item: DoLaterItem }>(`/memos/${memoId}/do-later`, {
     method: "POST",
@@ -183,11 +189,11 @@ export const addDoLater = async (memoId: string, attentionLevel: AttentionLevel 
 export const updateDoLater = async (
   memoId: string,
   action: DoLaterAction,
-  options?: { heavy_marked?: boolean }
+  options?: { reason?: string }
 ): Promise<DoLaterItem> => {
   const result = await request<{ item: DoLaterItem }>(`/memos/${memoId}/do-later`, {
     method: "PATCH",
-    body: JSON.stringify({ action })
+    body: JSON.stringify({ action, ...options })
   });
   return result.item;
 };

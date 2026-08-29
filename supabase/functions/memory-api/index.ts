@@ -408,6 +408,28 @@ const loadDoLaterItem = async (admin: AdminClient, ownerId: string, memoId: stri
     .find((item) => item.memo_id === memoId) ?? null;
 };
 
+const loadDoLaterDeferrals = async (admin: AdminClient, ownerId: string) => {
+  const rows: Record<string, string>[] = [];
+  const pageSize = 1000;
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await admin.from("memo_later_deferrals")
+      .select("id,memo_id,reason_ciphertext,memo_text_ciphertext,deferred_at")
+      .eq("owner_id", ownerId)
+      .order("deferred_at", { ascending: true })
+      .range(offset, offset + pageSize - 1);
+    if (error) throw error;
+    rows.push(...((data ?? []) as Record<string, string>[]));
+    if ((data ?? []).length < pageSize) break;
+  }
+  return Promise.all(rows.map(async (row) => ({
+    id: row.id,
+    memo_id: row.memo_id,
+    reason: await decrypt(row.reason_ciphertext),
+    memo_text: await decrypt(row.memo_text_ciphertext),
+    deferred_at: row.deferred_at
+  })));
+};
+
 const loadMemoryReference = async (admin: AdminClient, ownerId: string, memoryId: string) => {
   if (/^[0-9a-f-]{36}$/i.test(memoryId)) {
     const { data } = await admin.from("captured_memos").select("*")
@@ -930,6 +952,10 @@ if (route === "/search" && request.method === "POST") {
       });
     }
 
+    if (route === "/do-later/deferrals" && request.method === "GET") {
+      return json({ items: await loadDoLaterDeferrals(admin, ownerId) });
+    }
+
     if (route === "/do-later" && request.method === "GET") {
       const requestedView = new URL(request.url).searchParams.get("view") ?? "active";
       if (!["active", "resolved"].includes(requestedView)) {
@@ -943,7 +969,7 @@ if (route === "/search" && request.method === "POST") {
     const doLaterMatch = route.match(/^\/memos\/([0-9a-f-]{36})\/do-later$/i);
     if (doLaterMatch) {
       const memoId = doLaterMatch[1]!;
-      const { data: memo, error: memoError } = await admin.from("captured_memos").select("id")
+      const { data: memo, error: memoError } = await admin.from("captured_memos").select("id,current_ciphertext")
         .eq("id", memoId).eq("owner_id", ownerId).is("deleted_at", null).maybeSingle();
       if (memoError) throw memoError;
       if (!memo) return json({ error: "not_found" }, 404);
@@ -1031,6 +1057,19 @@ if (route === "/search" && request.method === "POST") {
         const action = String(body.action ?? "");
         if (!["done", "later", "abandon"].includes(action)) {
           return json({ error: "invalid_request" }, 400);
+        }
+        const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+        if (action === "later" && !current.repeat_daily) {
+          if (reason.length < 1 || reason.length > 1000) return json({ error: "invalid_reason" }, 400);
+          const { error } = await admin.rpc("record_memo_later_deferral", {
+            p_memo_id: memoId,
+            p_owner_id: ownerId,
+            p_reason_ciphertext: await encrypt(reason),
+            p_memo_text_ciphertext: memo.current_ciphertext,
+            p_deferred_at: now
+          });
+          if (error) throw error;
+          return json({ item: await loadDoLaterItem(admin, ownerId, memoId) });
         }
         const repeatingToday = Boolean(current.repeat_daily) && (action === "done" || action === "later");
         const status = repeatingToday ? "active" : action === "done" ? "done" : action === "abandon" ? "abandoned" : "active";
