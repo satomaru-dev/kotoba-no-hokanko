@@ -1052,6 +1052,7 @@ export const App = () => {
                     type="button"
                     onClick={() => openDoLater(item)}>
                     <time>{formatRelativeDate(item.memo.captured_at)}</time>
+                    {item.repeat_daily && <span className="repeat-daily-badge" aria-label="毎日くり返す">↻ 毎日</span>}
 
                     {START_ASSIST_BETA && item.first_step && (
                       <em className="first-step-preview">まず、これだけ：{item.first_step}</em>

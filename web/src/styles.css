@@ -249,6 +249,7 @@ button:disabled { cursor: default; }
 .do-later-main time, .memo-row time { color: var(--hint); }
 .do-later-main strong { display: none; }
 .do-later-text { display: -webkit-box; overflow: hidden; color: var(--ink) !important; font-family: inherit !important; font-size: 15px !important; line-height: 1.65 !important; -webkit-line-clamp: 2 !important; }
+.repeat-daily-badge { display: inline-block; margin-left: 8px; color: var(--accent-dark); font-size: 12px; font-weight: 700; letter-spacing: .03em; }
 .first-step-preview { margin: 2px 0 7px; color: var(--primary-text); font-size: 12px; }
 .setup-start-button { border-top: 0; background: transparent; color: var(--primary-text); }
 .workspace-actions { padding-bottom: 8px; }
