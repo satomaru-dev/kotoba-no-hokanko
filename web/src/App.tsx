@@ -1447,8 +1447,8 @@ const LaterReasonDialog = ({
         />
         <div className="later-reason-footer">
           <small>{reason.length}/1000</small>
-          <button className="later-reason-defer" disabled={!reason.trim() || busy} onClick={() => void submit()}>
-            {busy ? "残しています…" : "この理由で、まだやらない"}
+          <button type="button" className="later-reason-defer" disabled={!reason.trim() || busy} onClick={() => void submit()}>
+            {busy ? "残しています…" : "確定"}
           </button>
         </div>
       </article>
