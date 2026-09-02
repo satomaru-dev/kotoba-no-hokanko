@@ -1,4 +1,5 @@
 import { createClient, type Session } from "@supabase/supabase-js";
+import { readAuthReturn } from "./auth";
 import type {
   AttentionLevel,
   CaptureInput,
@@ -21,6 +22,8 @@ import type {
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 export const cloudMode = Boolean(supabaseUrl && supabaseAnonKey);
+// Keep only routing flags, before Supabase consumes and removes the URL fragment.
+export const initialAuthReturn = readAuthReturn(window.location.href);
 export const supabase = cloudMode
   ? createClient(supabaseUrl!, supabaseAnonKey!, {
       auth: { persistSession: true, detectSessionInUrl: true }

@@ -1,4 +1,4 @@
-const CACHE = "kotoba-shell-v6";
+const CACHE = "kotoba-shell-v7";
 const SHELL = [
   "./",
   "./manifest.webmanifest",
@@ -25,7 +25,10 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
-  const pathname = new URL(event.request.url).pathname;
+  const url = new URL(event.request.url);
+  // Auth responses (including getUser) must never come from an offline cache.
+  if (url.origin !== self.location.origin || url.pathname.includes("/auth/v1/")) return;
+  const pathname = url.pathname;
   if (event.request.method !== "GET" || pathname.endsWith("/sw.js") || pathname.startsWith("/api/") || pathname.includes("/functions/v1/memory-api")) return;
   event.respondWith(
     fetch(event.request)

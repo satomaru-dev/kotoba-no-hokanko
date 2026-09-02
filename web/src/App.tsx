@@ -266,58 +266,6 @@ const AnimatedMascot = ({ className }: { className: string }) => (
   </picture>
 );
 
-const AuthScreen = ({ onReady }: { onReady: (session: Session) => void }) => {
-  const [email, setEmail] = useState("");
-  const [sent, setSent] = useState(false);
-  const [error, setError] = useState("");
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    setError("");
-    const redirect = new URL(window.location.href);
-    redirect.hash = "";
-    redirect.search = "";
-    const { error: authError } = await supabase!.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: redirect.toString() }
-    });
-    if (authError) setError(authError.message);
-    else setSent(true);
-  };
-  useEffect(() => {
-    const { data } = supabase!.auth.onAuthStateChange((_event, session) => {
-      if (session) onReady(session);
-    });
-    return () => data.subscription.unsubscribe();
-  }, [onReady]);
-  return (
-    <main className="auth-shell">
-      <AnimatedMascot className="brand-mascot" />
-      <p className="eyebrow">ことばの保管庫</p>
-      <h1>自分の言葉に、<br />帰ってこられる場所。</h1>
-      {sent ? (
-        <div className="auth-message">
-          <strong>メールを送りました</strong>
-          <p>届いたリンクを開くと、この端末で使い始められます。</p>
-        </div>
-      ) : (
-        <form className="auth-form" onSubmit={submit}>
-          <label htmlFor="email">本人確認用のメールアドレス</label>
-          <input
-            id="email"
-            type="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            placeholder="name@example.com"
-            required
-          />
-          <button className="primary-button" type="submit">ログイン用リンクを受け取る</button>
-          {error && <p className="error-text">{error}</p>}
-        </form>
-      )}
-    </main>
-  );
-};
-
 const SortableDoLaterCard = ({ id, children }: { id: string; children: ReactNode }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
   const style = { transform: CSS.Transform.toString(transform), transition, touchAction: "pan-y" as const, zIndex: isDragging ? 2 : undefined };
@@ -328,7 +276,7 @@ const SortableDoLaterCard = ({ id, children }: { id: string; children: ReactNode
   );
 };
 
-export const App = () => {
+export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void }) => {
   const [session, setSession] = useState<Session | null | undefined>(cloudMode ? undefined : null);
   const [minimumLoadingDone, setMinimumLoadingDone] = useState(false);
   useEffect(() => {
@@ -944,7 +892,7 @@ export const App = () => {
   if (session === undefined || !minimumLoadingDone) {
     return <main className="loading-screen"><AnimatedMascot className="brand-mascot" /></main>;
   }
-  if (cloudMode && !session) return <AuthScreen onReady={setSession} />;
+  if (cloudMode && !session) return null;
 
   return (
     <div className="app-shell">
@@ -954,6 +902,7 @@ export const App = () => {
           <h1>{navTitle}</h1>
         </div>
         <div className="topbar-actions">
+          {onPasswordSettings && <button className="account-password-button" type="button" onClick={onPasswordSettings}>パスワード設定</button>}
           {tab === "recent" && (
             <button
               className={`trash-header-button ${showTrash ? "active" : ""}`}
