@@ -56,8 +56,10 @@ describe("existing-account password authentication", () => {
     expect(readAuthReturn("https://example.com/?auth=password#type=recovery")).toEqual({ password: true, failed: false });
     expect(readAuthReturn("https://example.com/#error=access_denied").failed).toBe(true);
   });
-  it("requires a long matching password without trimming it", () => {
+  it("requires at least eight matching characters without trimming the password", () => {
     expect(passwordError("short", "short")).not.toBe("");
+    expect(passwordError("Abcd123", "Abcd123")).toBe("パスワードは8文字以上にしてください。");
+    expect(passwordError("Abcd1234", "Abcd1234")).toBe("");
     expect(passwordError(password, password + " ")).not.toBe("");
     expect(passwordError(" " + password, " " + password)).toBe("");
   });
@@ -66,6 +68,19 @@ describe("existing-account password authentication", () => {
     await setExistingAccountPassword(client, session.user.id, password, password);
     expect(auth.getUser).toHaveBeenCalledOnce();
     expect(auth.updateUser).toHaveBeenCalledExactlyOnceWith({ password });
+  });
+  it("rejects seven characters and allows eight in the password setting form", async () => {
+    const { client, auth } = mockClient();
+    await render(createElement(PasswordForm, { client, session, onClose: vi.fn() }));
+    expect(container.querySelector<HTMLInputElement>("#new-password")!.minLength).toBe(8);
+    expect(container.querySelector<HTMLInputElement>("#confirm-password")!.minLength).toBe(8);
+    expect(container.textContent).toContain("8文字以上");
+    await input("new-password", "Abcd123"); await input("confirm-password", "Abcd123"); await submit();
+    expect(auth.getUser).not.toHaveBeenCalled();
+    expect(auth.updateUser).not.toHaveBeenCalled();
+    await input("new-password", "Abcd1234"); await input("confirm-password", "Abcd1234"); await submit();
+    expect(auth.updateUser).toHaveBeenCalledExactlyOnceWith({ password: "Abcd1234" });
+    expect(container.textContent).toContain("パスワードを設定しました");
   });
   it("does not update when verification fails or the account has changed", async () => {
     const { client, auth } = mockClient();

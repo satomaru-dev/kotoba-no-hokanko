@@ -106,12 +106,12 @@ export const PasswordForm = ({ client, session, onClose }: { client: SupabaseCli
       <strong>パスワードを設定しました</strong>
       <p>今までのメモと履歴はそのままです。ホーム画面のアプリでも、このメールアドレスとパスワードでログインできます。</p>
     </div> : <form className="auth-form" onSubmit={submit}>
-      <p className="auth-help">今のアカウントのパスワードだけを設定します。12文字以上で、他のサービスと使い回していないものにしてください。</p>
+      <p className="auth-help">今のアカウントのパスワードだけを設定します。8文字以上で、他のサービスと使い回していないものにしてください。</p>
       <input type="text" autoComplete="username" value={session.user.email ?? ""} readOnly hidden />
       <label htmlFor="new-password">新しいパスワード</label>
-      <input id="new-password" type="password" autoComplete="new-password" minLength={12} required disabled={busy} value={password} onChange={e => setPassword(e.target.value)} />
+      <input id="new-password" type="password" autoComplete="new-password" minLength={8} required disabled={busy} value={password} onChange={e => setPassword(e.target.value)} />
       <label htmlFor="confirm-password">新しいパスワード（確認）</label>
-      <input id="confirm-password" type="password" autoComplete="new-password" minLength={12} required disabled={busy} value={confirmation} onChange={e => setConfirmation(e.target.value)} />
+      <input id="confirm-password" type="password" autoComplete="new-password" minLength={8} required disabled={busy} value={confirmation} onChange={e => setConfirmation(e.target.value)} />
       <button className="primary-button" disabled={busy}>{busy ? "設定中…" : "パスワードを設定する"}</button>
     </form>}
     {error && <p className="error-text" role="alert">{error}</p>}

@@ -18,7 +18,7 @@ export const authRedirect = (href: string, password = false): string => {
 };
 
 export const passwordError = (password: string, confirmation: string): string => {
-  if (password.length < 12) return "パスワードは12文字以上にしてください。";
+  if (password.length < 8) return "パスワードは8文字以上にしてください。";
   if (password !== confirmation) return "確認用のパスワードが一致していません。";
   return "";
 };
