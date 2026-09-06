@@ -75,7 +75,7 @@ const START_ASSIST_BETA = import.meta.env.VITE_START_ASSIST_BETA !== "false";
 const SEARCH_INSIGHTS_KEY = "kotoba-search-insights-v1";
 
 const emptySearchInsights = (): SearchInsights => ({ recent: [], frequent: [] });
-const attentionLabel = (level: AttentionLevel): string => ({ do_later: "\u3042\u3068\u3067\u3084\u308b", keep_in_mind: "\u3057\u3070\u3089\u304f\u898b\u3048\u308b\u3068\u3053\u308d\u306b\u7f6e\u3044\u3066\u304a\u304d\u305f\u3044", important_insight: "\u4eca\u306e\u81ea\u5206\u306b\u3068\u3063\u3066\u7d50\u69cb\u91cd\u8981\u306a\u6c17\u3065\u304d" }[level]);
+const attentionLabel = (level: AttentionLevel): string => ({ do_later: "\u3042\u3068\u3067\u3084\u308b", keep_in_mind: "\u3057\u3070\u3089\u304f\u898b\u3048\u308b\u3068\u3053\u308d\u306b\u7f6e\u3044\u3066\u304a\u304d\u305f\u3044", important_insight: "\u4eca\u306e\u81ea\u5206\u306b\u3068\u3063\u3066\u7d50\u69cb\u91cd\u8981\u306a\u6c17\u3065\u304d", app_improvement: "\u8a00\u8449\u306e\u4fdd\u7ba1\u5eab\u306e\u6539\u5584\u30a2\u30a4\u30c7\u30a2" }[level]);
 const readCachedSearchInsights = (): SearchInsights => {
   try {
     const value = localStorage.getItem(SEARCH_INSIGHTS_KEY);
@@ -880,7 +880,8 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
   const recentSource = showTrash ? trash : memos;
   const recentKeepInMind = recentSource.filter((memo) => memo.attention_level === "keep_in_mind");
   const recentImportant = recentSource.filter((memo) => memo.attention_level === "important_insight");
-  const recentOther = recentSource.filter((memo) => memo.attention_level !== "keep_in_mind" && memo.attention_level !== "important_insight" && memo.attention_level !== "do_later");
+  const recentAppImprovement = recentSource.filter((memo) => memo.attention_level === "app_improvement");
+  const recentOther = recentSource.filter((memo) => memo.attention_level !== "keep_in_mind" && memo.attention_level !== "important_insight" && memo.attention_level !== "app_improvement" && memo.attention_level !== "do_later");
 
   const navTitle = useMemo(() => {
     if (tab === "do-later") return "あとでやる";
@@ -1173,10 +1174,11 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
               </div>
             ) : (
               <>
+                {recentAppImprovement.length > 0 && <section className="recent-group"><h2 className="recent-group-title">言葉の保管庫の改善アイデア</h2><div className="memo-list">{recentAppImprovement.map((memo) => <MemoRow key={memo.id} memo={memo} onOpen={() => setSelected(memo)} onDialogue={(threadId) => void openThread(threadId)} />)}</div></section>}
                 {recentKeepInMind.length > 0 && <section className="recent-group"><h2 className="recent-group-title">しばらく見えるところに置いておきたい</h2><div className="memo-list">{recentKeepInMind.map((memo) => <MemoRow key={memo.id} memo={memo} onOpen={() => setSelected(memo)} onDialogue={(threadId) => void openThread(threadId)} />)}</div></section>}
                 {recentImportant.length > 0 && <section className="recent-group"><h2 className="recent-group-title">今の自分にとって結構重要な気づき</h2><div className="memo-list">{recentImportant.map((memo) => <MemoRow key={memo.id} memo={memo} onOpen={() => setSelected(memo)} onDialogue={(threadId) => void openThread(threadId)} />)}</div></section>}
                 {recentOther.length > 0 && <section className="recent-group"><h2 className="recent-group-title">その他のアイデア</h2><div className="memo-list">{recentOther.map((memo) => <MemoRow key={memo.id} memo={memo} onOpen={() => setSelected(memo)} onDialogue={(threadId) => void openThread(threadId)} />)}</div></section>}
-                {recentKeepInMind.length === 0 && recentImportant.length === 0 && recentOther.length === 0 && <p className="empty-message">ここに、残した言葉が並びます。</p>}
+                {recentAppImprovement.length === 0 && recentKeepInMind.length === 0 && recentImportant.length === 0 && recentOther.length === 0 && <p className="empty-message">ここに、残した言葉が並びます。</p>}
               </>
             )}
           </section>
@@ -1426,6 +1428,7 @@ const AttentionChooser = ({ onSelect, onClose, initialRepeatDaily = false }: { o
       <button onClick={() => onSelect("do_later", (document.getElementById("repeat-daily-setting") as HTMLInputElement)?.checked ?? false)}><strong>{"\u3042\u3068\u3067\u3084\u308b"}</strong><small>{"\u884c\u52d5\u306b\u3064\u306a\u304c\u308a\u305d\u3046"}</small></button>
       <button onClick={() => onSelect("keep_in_mind", false)}><strong>{"\u3057\u3070\u3089\u304f\u898b\u3048\u308b\u3068\u3053\u308d\u306b\u7f6e\u3044\u3066\u304a\u304d\u305f\u3044"}</strong><small>{"\u4eca\u306e\u81ea\u5206\u306e\u4e2d\u306b\u7f6e\u3044\u3066\u304a\u304f"}</small></button>
       <button onClick={() => onSelect("important_insight")}><strong>{"\u4eca\u306e\u81ea\u5206\u306b\u3068\u3063\u3066\u7d50\u69cb\u91cd\u8981\u306a\u6c17\u3065\u304d"}</strong><small>{"\u512a\u5148\u7684\u306b\u76ee\u306b\u5165\u308c\u308b"}</small></button>
+      <button onClick={() => onSelect("app_improvement", false)}><strong>言葉の保管庫の改善アイデア</strong><small>アプリをもっとよくするために残す</small></button>
     </div>
   </section>
 );

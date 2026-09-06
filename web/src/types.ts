@@ -105,7 +105,7 @@ export interface ReminderInput {
   remind_at: string;
 }
 
-export type AttentionLevel = "do_later" | "keep_in_mind" | "important_insight";
+export type AttentionLevel = "do_later" | "keep_in_mind" | "important_insight" | "app_improvement";
 export type DoLaterStatus = "active" | "done" | "abandoned";
 export type DoLaterAction = "done" | "later" | "abandon";
 

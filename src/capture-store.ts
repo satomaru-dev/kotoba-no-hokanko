@@ -21,7 +21,7 @@ export interface CapturedMemo {
   revisions: MemoRevision[];
 }
 
-export type AttentionLevel = "do_later" | "keep_in_mind" | "important_insight";
+export type AttentionLevel = "do_later" | "keep_in_mind" | "important_insight" | "app_improvement";
 export type DoLaterStatus = "active" | "done" | "abandoned";
 
 export interface DoLaterItem {
@@ -265,7 +265,7 @@ export class CaptureStore {
       .sort((left, right) => {
         if (view === "active") {
           if (left.repeat_daily !== right.repeat_daily) return left.repeat_daily ? -1 : 1;
-          const rank = { do_later: 1, keep_in_mind: 2, important_insight: 3 } as const;
+          const rank = { do_later: 1, keep_in_mind: 2, important_insight: 3, app_improvement: 4 } as const;
           const leftRank = rank[left.attention_level] ?? 1;
           const rightRank = rank[right.attention_level] ?? 1;
           if (leftRank !== rightRank) return rightRank - leftRank;

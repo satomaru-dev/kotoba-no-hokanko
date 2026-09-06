@@ -154,7 +154,7 @@ app.get("/api/do-later/deferrals", (_request: Request, response: Response) => {
 app.post("/api/memos/:id/do-later", async (request: Request, response: Response, next: NextFunction) => {
   try {
     const body = request.body as { attention_level?: string; repeat_daily?: boolean };
-    const item = await captures.addDoLater(String(request.params.id ?? ""), z.enum(["do_later", "keep_in_mind", "important_insight"]).catch("do_later").parse(body.attention_level), new Date().toISOString(), z.boolean().optional().parse(body.repeat_daily));
+    const item = await captures.addDoLater(String(request.params.id ?? ""), z.enum(["do_later", "keep_in_mind", "important_insight", "app_improvement"]).catch("do_later").parse(body.attention_level), new Date().toISOString(), z.boolean().optional().parse(body.repeat_daily));
     if (!item) {
       response.status(404).json({ error: "not_found" });
       return;
@@ -190,7 +190,7 @@ app.patch("/api/memos/:id/do-later", async (request: Request, response: Response
         }).parse(body)
       : null;
     const item = body.attention_level !== undefined
-      ? await captures.updateAttentionLevel(id, z.enum(["do_later", "keep_in_mind", "important_insight"]).parse(body.attention_level))
+      ? await captures.updateAttentionLevel(id, z.enum(["do_later", "keep_in_mind", "important_insight", "app_improvement"]).parse(body.attention_level))
       : body.configuration !== undefined
       ? await captures.configureDoLater(id, z.object({
           first_step: z.string().max(500).nullable(),

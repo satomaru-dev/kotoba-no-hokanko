@@ -354,7 +354,7 @@ const loadDoLaterItems = async (
     .sort((left, right) => {
     if (view !== "active") return (right.resolved_at ?? right.updated_at).localeCompare(left.resolved_at ?? left.updated_at);
     if (Boolean(left.repeat_daily) !== Boolean(right.repeat_daily)) return left.repeat_daily ? -1 : 1;
-    const rank = { do_later: 1, keep_in_mind: 2, important_insight: 3 } as Record<string, number>;
+    const rank = { do_later: 1, keep_in_mind: 2, important_insight: 3, app_improvement: 4 } as Record<string, number>;
     const leftRank = rank[left.attention_level] ?? 1;
     const rightRank = rank[right.attention_level] ?? 1;
     if (leftRank !== rightRank) return rightRank - leftRank;
@@ -978,7 +978,7 @@ if (route === "/search" && request.method === "POST") {
         const body = await request.json().catch(() => ({}));
         const attentionLevel = String(body.attention_level ?? "do_later");
         const repeatDaily = body.repeat_daily === undefined ? undefined : Boolean(body.repeat_daily);
-        if (!["do_later", "keep_in_mind", "important_insight"].includes(attentionLevel)) return json({ error: "invalid_request" }, 400);
+        if (!["do_later", "keep_in_mind", "important_insight", "app_improvement"].includes(attentionLevel)) return json({ error: "invalid_request" }, 400);
         const { data: current, error: currentError } = await admin.from("memo_later_items")
           .select("memo_id,repeat_daily").eq("memo_id", memoId).eq("owner_id", ownerId).maybeSingle();
         if (currentError) throw currentError;
@@ -1025,7 +1025,7 @@ if (route === "/search" && request.method === "POST") {
         }
         if (body.attention_level !== undefined) {
           const attentionLevel = String(body.attention_level);
-          if (!["do_later", "keep_in_mind", "important_insight"].includes(attentionLevel)) return json({ error: "invalid_request" }, 400);
+          if (!["do_later", "keep_in_mind", "important_insight", "app_improvement"].includes(attentionLevel)) return json({ error: "invalid_request" }, 400);
           const { error } = await admin.from("memo_later_items").update({ attention_level: attentionLevel, updated_at: now })
             .eq("memo_id", memoId).eq("owner_id", ownerId);
           if (error) throw error;

@@ -124,14 +124,17 @@ describe("capture store", () => {
 
   it("orders active items by attention level and preserves legacy defaults", async () => {
     const { store } = await makeStore();
-    const ids = ["99999999-9999-4999-8999-999999999991", "99999999-9999-4999-8999-999999999992", "99999999-9999-4999-8999-999999999993"];
+    const ids = ["99999999-9999-4999-8999-999999999991", "99999999-9999-4999-8999-999999999992", "99999999-9999-4999-8999-999999999993", "99999999-9999-4999-8999-999999999994"];
     await store.capture(ids[0]!, "one", "2026-08-01T00:00:00.000Z");
     await store.capture(ids[1]!, "two", "2026-08-01T01:00:00.000Z");
     await store.capture(ids[2]!, "three", "2026-08-01T02:00:00.000Z");
+    await store.capture(ids[3]!, "four", "2026-08-01T02:30:00.000Z");
     await store.addDoLater(ids[0]!, "2026-08-01T03:00:00.000Z");
     await store.addDoLater(ids[1]!, "keep_in_mind", "2026-08-01T04:00:00.000Z");
     await store.addDoLater(ids[2]!, "important_insight", "2026-08-01T05:00:00.000Z");
-    expect(store.listDoLater("active").map((item) => item.memo_id)).toEqual([ids[2], ids[1], ids[0]]);
+    await store.addDoLater(ids[3]!, "app_improvement", "2026-08-01T06:00:00.000Z");
+    expect(store.listDoLater("active").map((item) => item.memo_id)).toEqual([ids[3], ids[2], ids[1], ids[0]]);
+    expect(store.list(false).find((memo) => memo.id === ids[3])).toMatchObject({ attention_level: "app_improvement" });
   });
 
   it("reorders active do-later items and preserves the order", async () => {
