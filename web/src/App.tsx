@@ -23,6 +23,7 @@ import {
   listDueReminders,
   listDoLater,
   listDoLaterDeferrals,
+  listHomeMemos,
   listMemos,
   markReminderOpened,
   openWorkspace,
@@ -49,6 +50,7 @@ import {
   removeQueuedReminder
 } from "./offline";
 import { deferralsToCsv, jstDateForFilename } from "./do-later-export";
+import { chooseImportantMemo, readHomeMode, readRotation, writeHomeMode, writeRotation, type HomeMode } from "./home-rediscovery";
 import { mergeMemo, prependMemo, removeDoLaterMemo, removeMemo, replaceDoLaterMemo, replaceMemo } from "./memo-state";
 import type {
   AttentionLevel,
@@ -276,6 +278,20 @@ const SortableDoLaterCard = ({ id, children }: { id: string; children: ReactNode
   );
 };
 
+const HomeRediscovery = ({ important, keep, onOpen, mode, onModeChange, loading, error, onReload }: {
+  important: Memo | null; keep: Memo[]; onOpen: (memo: Memo) => void; mode: HomeMode;
+  onModeChange: (mode: HomeMode) => void; loading: boolean; error: boolean; onReload: () => void;
+}) => {
+  if (mode !== "rediscovery") return null;
+  return <section className="home-rediscovery" aria-label="大事な言葉">
+    <div className="home-mode-row"><span>大事な言葉も見る（お試し）</span><button type="button" onClick={() => onModeChange("write")}>すぐ書く</button></div>
+    {loading && <p className="home-loading">大事な言葉を読み込んでいます…</p>}
+    {error && <div className="home-error"><span>大事な言葉を読み込めませんでした。</span><button type="button" onClick={onReload}>再読み込み</button></div>}
+    {!loading && !error && important && <div className="home-section"><h2>重要な気づき</h2><button className="home-memo-card important" type="button" onClick={() => onOpen(important)}><time>{formatRelativeDate(important.captured_at)}</time><span>{important.current_text}</span></button></div>}
+    {!loading && !error && keep.length > 0 && <div className="home-section"><h2>しばらく見えるところに置いておきたい</h2><div className="home-memo-list">{keep.map((memo) => <button className="home-memo-card" type="button" key={memo.id} onClick={() => onOpen(memo)}><time>{formatRelativeDate(memo.captured_at)}</time><span>{memo.current_text}</span></button>)}</div></div>}
+  </section>;
+};
+
 export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void }) => {
   const [session, setSession] = useState<Session | null | undefined>(cloudMode ? undefined : null);
   const [minimumLoadingDone, setMinimumLoadingDone] = useState(false);
@@ -314,6 +330,15 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
   const [installPrompt, setInstallPrompt] = useState<InstallPrompt | null>(null);
   const [notice, setNotice] = useState("");
   const [reactionVisible, setReactionVisible] = useState(false);
+  const [homeMode, setHomeMode] = useState<HomeMode>("rediscovery");
+  const [homeMemos, setHomeMemos] = useState<Memo[]>([]);
+  const [homeLoading, setHomeLoading] = useState(false);
+  const [homeError, setHomeError] = useState(false);
+  const [importantId, setImportantId] = useState<string | null>(null);
+  const homeOwner = cloudMode ? session?.user.id ?? null : "local";
+  const homeInitialized = useRef<string | null>(null);
+  const homeHiddenAt = useRef<number | null>(null);
+  const homeRotationPending = useRef(false);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const saveMessage = useRef<HTMLDivElement>(null);
   const memoRefreshRequest = useRef(0);
@@ -326,10 +351,10 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
 
   useEffect(() => {
     const focusId = window.setTimeout(() => {
-      if (tab === "write") textarea.current?.focus({ preventScroll: true });
+      if (tab === "write" && homeMode === "write") textarea.current?.focus({ preventScroll: true });
     }, 120);
     return () => window.clearTimeout(focusId);
-  }, [tab]);
+  }, [tab, homeMode]);
 
   useEffect(() => {
     if (!notice) return;
@@ -347,6 +372,68 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
     const { data } = supabase!.auth.onAuthStateChange((_event, next) => setSession(next));
     return () => data.subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!homeOwner) return;
+    setHomeMode(readHomeMode(homeOwner));
+    homeInitialized.current = null;
+  }, [homeOwner]);
+
+  const refreshHomeMemos = useCallback(async () => {
+    if (cloudMode && !session) return;
+    setHomeLoading(true);
+    setHomeError(false);
+    try {
+      const all: Memo[] = [];
+      let cursor: string | undefined;
+      do {
+        const page = await listHomeMemos(cursor);
+        all.push(...page.memos);
+        cursor = page.next_cursor ?? undefined;
+      } while (cursor);
+      setHomeMemos(all);
+      return all;
+    } catch {
+      setHomeError(true);
+      return [];
+    } finally { setHomeLoading(false); }
+  }, [session]);
+
+  useEffect(() => { void refreshHomeMemos(); }, [refreshHomeMemos]);
+
+  const rotateImportant = useCallback(() => {
+    if (!homeOwner) return;
+    const result = chooseImportantMemo(homeMemos, readRotation(homeOwner));
+    setImportantId(result.id);
+    writeRotation(homeOwner, result.state);
+  }, [homeMemos, homeOwner]);
+
+  const canRotateHome = tab === "write" && !text.trim() && !selected && !selectedMemory && !ideaThread && !showReminder && !pendingLaterId && !setupItem && !workspaceItem && !focusItem && saveState === "idle";
+
+  useEffect(() => {
+    if (!homeOwner || homeLoading || homeInitialized.current === homeOwner || homeMemos.length === 0) return;
+    homeInitialized.current = homeOwner;
+    rotateImportant();
+  }, [homeOwner, homeLoading, homeMemos.length, rotateImportant]);
+
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") homeHiddenAt.current = Date.now();
+      else if (homeHiddenAt.current && Date.now() - homeHiddenAt.current >= 60_000) {
+        homeHiddenAt.current = null;
+        if (canRotateHome) rotateImportant(); else homeRotationPending.current = true;
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [canRotateHome, rotateImportant]);
+
+  useEffect(() => {
+    if (homeRotationPending.current && canRotateHome) {
+      homeRotationPending.current = false;
+      rotateImportant();
+    }
+  }, [canRotateHome, rotateImportant]);
 
   const refreshPending = useCallback(async () => {
     setPendingCount(await queuedCount());
@@ -882,6 +969,8 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
   const recentImportant = recentSource.filter((memo) => memo.attention_level === "important_insight");
   const recentAppImprovement = recentSource.filter((memo) => memo.attention_level === "app_improvement");
   const recentOther = recentSource.filter((memo) => memo.attention_level !== "keep_in_mind" && memo.attention_level !== "important_insight" && memo.attention_level !== "app_improvement" && memo.attention_level !== "do_later");
+  const homeImportant = homeMemos.find((memo) => memo.id === importantId) ?? null;
+  const homeKeep = homeMemos.filter((memo) => memo.attention_level === "keep_in_mind");
 
   const navTitle = useMemo(() => {
     if (tab === "do-later") return "あとでやる";
@@ -946,6 +1035,19 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
         {tab === "write" && (
           <>
             <section className="write-panel">
+              {homeMode === "rediscovery" && !text.trim() && (
+                <HomeRediscovery
+                  important={homeImportant}
+                  keep={homeKeep}
+                  onOpen={(memo) => void openMemory({ memory_id: memo.id, source_type: "mobile_app", date: memo.captured_at, title: memo.title, excerpt: memo.current_text, source_uri: `memory://memo/${memo.id}`, relation: "以前と変化", confidence: 1, thread_id: memo.thread_id ?? null, dialogue_count: memo.dialogue_count ?? 0, dialogue_preview: memo.dialogue_preview ?? null, has_dialogue: memo.has_dialogue ?? false })}
+                  mode={homeMode}
+                  onModeChange={(mode) => { setHomeMode(mode); if (homeOwner) writeHomeMode(homeOwner, mode); }}
+                  loading={homeLoading}
+                  error={homeError}
+                  onReload={() => void refreshHomeMemos()}
+                />
+              )}
+              {homeMode === "write" && !text.trim() && <button className="home-switch-button" type="button" onClick={() => { setHomeMode("rediscovery"); if (homeOwner) writeHomeMode(homeOwner, "rediscovery"); }}>大事な言葉も見る（お試し）</button>}
               <div className="write-composer">
                 <label className="sr-only" htmlFor="thought">思いついた言葉</label>
                 <textarea
@@ -960,7 +1062,7 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
                     event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 240)}px`;
                   }}
                   placeholder={"いま浮かんでいることを、\n整えずにそのまま。"}
-                  autoFocus
+                  autoFocus={homeMode === "write"}
                 />
                 <div className="write-actions">
                   <span className="quiet-status">

@@ -176,6 +176,11 @@ export const listDoLater = async (view: "active" | "resolved"): Promise<DoLaterI
   return result.items;
 };
 
+export const listHomeMemos = async (cursor?: string): Promise<{ memos: Memo[]; next_cursor: string | null }> => {
+  const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
+  return request<{ memos: Memo[]; next_cursor: string | null }>(`/home-memos${query}`);
+};
+
 export const listDoLaterDeferrals = async (): Promise<DoLaterDeferral[]> => {
   const result = await request<{ items: DoLaterDeferral[] }>("/do-later/deferrals");
   return result.items;

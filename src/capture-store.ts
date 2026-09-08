@@ -43,6 +43,11 @@ export interface DoLaterItem {
   memo: CapturedMemo;
 }
 
+export interface HomeMemoPage {
+  memos: Array<CapturedMemo & { attention_level: "keep_in_mind" | "important_insight" }>;
+  next_cursor: string | null;
+}
+
 export interface DoLaterDeferral {
   id: string;
   memo_id: string;
@@ -283,6 +288,25 @@ export class CaptureStore {
         const rightDate = right.resolved_at ?? right.updated_at;
         return rightDate.localeCompare(leftDate);
       });
+  }
+
+  listHomeMemos(cursor: string | null = null, limit = 100): HomeMemoPage {
+    const ordered = [...this.doLater.values()]
+      .filter((item) => item.status === "active" && (item.attention_level === "keep_in_mind" || item.attention_level === "important_insight"))
+      .map((item) => ({ item, memo: this.memos.get(item.memo_id) }))
+      .filter((entry): entry is { item: StoredDoLaterItem; memo: CapturedMemo } => Boolean(entry.memo && !entry.memo.deleted_at))
+      .sort((left, right) => right.item.activated_at.localeCompare(left.item.activated_at) || left.memo.id.localeCompare(right.memo.id));
+    const filtered = cursor ? ordered.filter(({ item, memo }) => {
+      const separator = cursor.lastIndexOf("|");
+      const timestamp = separator >= 0 ? cursor.slice(0, separator) : cursor;
+      const id = separator >= 0 ? cursor.slice(separator + 1) : "";
+      return item.activated_at < timestamp || (item.activated_at === timestamp && memo.id > id);
+    }) : ordered;
+    const page = filtered.slice(0, limit);
+    return {
+      memos: page.map(({ item, memo }) => ({ ...memo, attention_level: item.attention_level as "keep_in_mind" | "important_insight" })),
+      next_cursor: page.length === limit ? `${page.at(-1)!.item.activated_at}|${page.at(-1)!.memo.id}` : null
+    };
   }
 
   listDoLaterDeferrals(): DoLaterDeferral[] {

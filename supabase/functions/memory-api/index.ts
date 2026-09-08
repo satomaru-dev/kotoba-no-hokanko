@@ -430,6 +430,38 @@ const loadDoLaterDeferrals = async (admin: AdminClient, ownerId: string) => {
   })));
 };
 
+const loadHomeMemos = async (admin: AdminClient, ownerId: string, cursor: string | null) => {
+  const { data: itemRows, error: itemError } = await admin.from("memo_later_items")
+    .select("memo_id,attention_level,activated_at")
+    .eq("owner_id", ownerId).eq("status", "active")
+    .in("attention_level", ["keep_in_mind", "important_insight"])
+    .limit(10_000);
+  if (itemError) throw itemError;
+  const ids = (itemRows ?? []).map((row) => row.memo_id);
+  const { data: memoRows, error: memoError } = ids.length === 0
+    ? { data: [], error: null }
+    : await admin.from("captured_memos").select("*")
+      .eq("owner_id", ownerId).is("deleted_at", null).in("id", ids);
+  if (memoError) throw memoError;
+  const decrypted = await decryptMemos(admin, ownerId, memoRows ?? []);
+  const memoMap = new Map(decrypted.map((memo) => [memo.id, memo]));
+  const joined = (itemRows ?? []).map((item) => ({ item, memo: memoMap.get(item.memo_id) }))
+    .filter((entry): entry is { item: typeof itemRows[number]; memo: typeof decrypted[number] } => Boolean(entry.memo))
+    .sort((left, right) => right.item.activated_at.localeCompare(left.item.activated_at) || left.memo.id.localeCompare(right.memo.id));
+  const filtered = cursor ? joined.filter(({ item, memo }) => {
+    const separator = cursor.lastIndexOf("|");
+    const timestamp = separator >= 0 ? cursor.slice(0, separator) : cursor;
+    const id = separator >= 0 ? cursor.slice(separator + 1) : "";
+    return item.activated_at < timestamp || (item.activated_at === timestamp && memo.id > id);
+  }) : joined;
+  const page = filtered.slice(0, 100);
+  const dialogue = await threadMetadata(admin, ownerId, page.map(({ memo }) => ({ memory_id: memo.id, source_type: "mobile_app" })));
+  return {
+    memos: page.map(({ item, memo }, index) => ({ ...memo, attention_level: item.attention_level, ...dialogue[index] })),
+    next_cursor: page.length === 100 ? `${page.at(-1)!.item.activated_at}|${page.at(-1)!.memo.id}` : null
+  };
+};
+
 const loadMemoryReference = async (admin: AdminClient, ownerId: string, memoryId: string) => {
   if (/^[0-9a-f-]{36}$/i.test(memoryId)) {
     const { data } = await admin.from("captured_memos").select("*")
@@ -950,6 +982,10 @@ if (route === "/search" && request.method === "POST") {
         })),
         next_cursor: null
       });
+    }
+
+    if (route === "/home-memos" && request.method === "GET") {
+      return json(await loadHomeMemos(admin, ownerId, new URL(request.url).searchParams.get("cursor")));
     }
 
     if (route === "/do-later/deferrals" && request.method === "GET") {

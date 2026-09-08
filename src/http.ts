@@ -147,6 +147,11 @@ app.get("/api/do-later", (request: Request, response: Response) => {
   response.json({ items: captures.listDoLater(view) });
 });
 
+app.get("/api/home-memos", (request: Request, response: Response) => {
+  const cursor = typeof request.query.cursor === "string" ? request.query.cursor : null;
+  response.json(captures.listHomeMemos(cursor, 100));
+});
+
 app.get("/api/do-later/deferrals", (_request: Request, response: Response) => {
   response.json({ items: captures.listDoLaterDeferrals() });
 });
