@@ -164,7 +164,14 @@ export class CaptureStore {
       } as StoredDoLaterItem]));
       this.doLaterDeferrals = doLaterDeferrals;
       this.attentionHistory = attentionHistory;
+      const historyCountBeforeBackfill = this.attentionHistory.length;
+      for (const item of doLater) {
+        if (item.status === "active" && !this.attentionHistory.some((history) => history.memo_id === item.memo_id)) {
+          this.attentionHistory.push({ id: crypto.randomUUID(), memo_id: item.memo_id, attention_level: item.attention_level, started_at: item.activated_at, ended_at: null });
+        }
+      }
       for (const memo of memos.filter((item) => !item.deleted_at)) await this.index(memo);
+      if (this.attentionHistory.length !== historyCountBeforeBackfill) await this.persist();
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       await fs.mkdir(path.dirname(this.filePath), { recursive: true });
