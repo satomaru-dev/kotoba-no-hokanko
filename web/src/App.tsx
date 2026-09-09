@@ -982,6 +982,7 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
   };
 
   const recentSource = showTrash ? trash : memos;
+  const allDoLaterMemos = recentSource.filter((memo) => memo.attention_level === "do_later");
   const recentKeepInMind = recentSource.filter((memo) => memo.attention_level === "keep_in_mind");
   const recentImportant = recentSource.filter((memo) => memo.attention_level === "important_insight");
   const recentAppImprovement = recentSource.filter((memo) => memo.attention_level === "app_improvement");
@@ -993,7 +994,7 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
   const navTitle = useMemo(() => {
     if (tab === "do-later") return "あとでやる";
     if (tab === "search") return "言葉をさがす";
-    if (tab === "recent") return "最近";
+    if (tab === "recent") return "全メモ";
     return "ことばの保管庫";
   }, [tab]);
 
@@ -1015,7 +1016,7 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
             <button
               className={`trash-header-button ${showTrash ? "active" : ""}`}
               type="button"
-              aria-label={showTrash ? "最近の言葉に戻る" : "ゴミ箱を開く"}
+              aria-label={showTrash ? "全メモに戻る" : "ゴミ箱を開く"}
               onClick={() => setShowTrash((value) => !value)}
             >
               <NavIcon kind="trash" />
@@ -1299,7 +1300,8 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
                 {recentImportant.length > 0 && <section className="recent-group"><h2 className="recent-group-title">今の自分にとって結構重要な気づき</h2><div className="memo-list">{recentImportant.map((memo) => <MemoRow key={memo.id} memo={memo} onOpen={() => setSelected(memo)} onDialogue={(threadId) => void openThread(threadId)} />)}</div></section>}
                 {recentOther.length > 0 && <section className="recent-group"><h2 className="recent-group-title">その他のアイデア</h2><div className="memo-list">{recentOther.map((memo) => <MemoRow key={memo.id} memo={memo} onOpen={() => setSelected(memo)} onDialogue={(threadId) => void openThread(threadId)} />)}</div></section>}
                 {historicalMemos.length > 0 && <section className="recent-group"><h2 className="recent-group-title">以前、重要度をつけたメモ</h2><div className="memo-list">{historicalMemos.map((memo) => <MemoRow key={`historical-${memo.id}`} memo={memo} onOpen={() => setSelected(memo)} onDialogue={(threadId) => void openThread(threadId)} />)}</div></section>}
-                {recentAppImprovement.length === 0 && recentKeepInMind.length === 0 && recentImportant.length === 0 && recentOther.length === 0 && <p className="empty-message">ここに、残した言葉が並びます。</p>}
+                {allDoLaterMemos.length > 0 && <section className="recent-group"><h2 className="recent-group-title">あとでやる</h2><div className="memo-list">{allDoLaterMemos.map((memo) => <MemoRow key={memo.id} memo={memo} onOpen={() => setSelected(memo)} onDialogue={(threadId) => void openThread(threadId)} />)}</div></section>}
+                {recentSource.length === 0 && <p className="empty-message">ここに、残した言葉が並びます。</p>}
               </>
             )}
           </section>
@@ -1314,7 +1316,7 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
           <span className="nav-icon"><NavIcon kind="later" /></span><span>あとでやる</span>
         </button>
         <button className={tab === "recent" ? "active" : ""} onClick={() => setTab("recent")}>
-          <span className="nav-icon"><NavIcon kind="recent" /></span><span>最近</span>
+          <span className="nav-icon"><NavIcon kind="recent" /></span><span>全メモ</span>
         </button>
         <button className={tab === "search" ? "active" : ""} onClick={() => setTab("search")}>
           <span className="nav-icon"><NavIcon kind="search" /></span><span>さがす</span>

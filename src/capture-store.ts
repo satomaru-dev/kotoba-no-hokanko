@@ -310,6 +310,17 @@ export class CaptureStore {
       });
   }
 
+  listMemoPage(deleted = false, cursor: string | null = null, limit = 100) {
+    const [timestamp, id] = cursor ? JSON.parse(cursor) as [string, string] : ["", ""];
+    const all = this.list(deleted).sort((a, b) =>
+      b.captured_at.localeCompare(a.captured_at) || b.id.localeCompare(a.id));
+    const remaining = cursor ? all.filter((memo) =>
+      memo.captured_at < timestamp || (memo.captured_at === timestamp && memo.id < id)) : all;
+    const memos = remaining.slice(0, limit);
+    const last = memos.at(-1);
+    return { memos, next_cursor: remaining.length > limit && last ? JSON.stringify([last.captured_at, last.id]) : null };
+  }
+
   listHomeMemos(cursor: string | null = null, limit = 100): HomeMemoPage {
     const ordered = [...this.doLater.values()]
       .filter((item) => item.status === "active" && (item.attention_level === "keep_in_mind" || item.attention_level === "important_insight"))

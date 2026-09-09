@@ -33,6 +33,18 @@ const makeStore = async () => {
 };
 
 describe("capture store", () => {
+  it("pages all memos with tied timestamps without missing IDs and separates trash", async () => {
+    const { store } = await makeStore();
+    for (let i = 0; i < 105; i++) await store.capture(String(i).padStart(8, "0"), "memo", "2026-09-01T00:00:00.000Z");
+    await store.trash("00000000");
+    const first = store.listMemoPage(false, null, 100);
+    const second = store.listMemoPage(false, first.next_cursor, 100);
+    expect(first.memos).toHaveLength(100);
+    expect(second.memos).toHaveLength(4);
+    expect(new Set([...first.memos, ...second.memos].map(memo => memo.id)).size).toBe(104);
+    expect(second.next_cursor).toBeNull();
+    expect(store.listMemoPage(true).memos.map(memo => memo.id)).toEqual(["00000000"]);
+  });
   it("preserves the original and makes repeat client IDs idempotent", async () => {
     const { store } = await makeStore();
     const id = "11111111-1111-4111-8111-111111111111";

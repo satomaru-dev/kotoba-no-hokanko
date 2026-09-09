@@ -76,8 +76,21 @@ export const recordSearch = (query: string): Promise<SearchInsights> =>
   });
 
 export const listMemos = async (deleted = false): Promise<Memo[]> => {
-  const result = await request<{ memos: Memo[] }>(`/memos?deleted=${deleted}`);
-  return result.memos;
+  const memos = new Map<string, Memo>();
+  const visited = new Set<string>();
+  let cursor: string | null = null;
+  do {
+    const result: { memos: Memo[]; next_cursor: string | null } = await request(
+      `/memos?deleted=${deleted}&limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`
+    );
+    for (const memo of result.memos) memos.set(memo.id, memo);
+    cursor = result.next_cursor;
+    if (cursor) {
+      if (visited.has(cursor)) throw new Error("メモ一覧の続きを取得できませんでした");
+      visited.add(cursor);
+    }
+  } while (cursor);
+  return [...memos.values()];
 };
 
 export const updateMemo = async (id: string, text: string, title?: string): Promise<Memo> => {

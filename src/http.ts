@@ -80,14 +80,8 @@ app.post("/api/search-insights", async (request: Request, response: Response, ne
 app.get("/api/memos", (request: Request, response: Response) => {
   const deleted = request.query.deleted === "true";
   const cursor = typeof request.query.cursor === "string" ? request.query.cursor : null;
-  const limit = Math.min(50, Math.max(1, Number(request.query.limit) || 20));
-  const all = captures.list(deleted);
-  const filtered = cursor ? all.filter((memo) => memo.captured_at < cursor) : all;
-  const memos = filtered.slice(0, limit);
-  response.json({
-    memos,
-    next_cursor: filtered.length > limit ? memos.at(-1)?.captured_at ?? null : null
-  });
+  const limit = Math.min(100, Math.max(1, Math.floor(Number(request.query.limit) || 100)));
+  response.json(captures.listMemoPage(deleted, cursor, limit));
 });
 
 app.get("/api/memos/:id", (request: Request, response: Response) => {

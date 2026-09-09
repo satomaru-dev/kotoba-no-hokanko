@@ -971,12 +971,26 @@ if (route === "/search" && request.method === "POST") {
     }
 
     if (route === "/memos" && request.method === "GET") {
-      const deleted = new URL(request.url).searchParams.get("deleted") === "true";
+      const params = new URL(request.url).searchParams;
+      const deleted = params.get("deleted") === "true";
+      const limit = Math.min(100, Math.max(1, Math.floor(Number(params.get("limit")) || 100)));
+      const cursor = params.get("cursor");
       let query = admin.from("captured_memos").select("*").eq("owner_id", ownerId);
       query = deleted ? query.not("deleted_at", "is", null) : query.is("deleted_at", null);
-      const { data, error } = await query.order("captured_at", { ascending: false }).limit(50);
+      if (cursor) {
+        let key: unknown;
+        try { key = JSON.parse(cursor); } catch { return json({ error: "invalid_cursor" }, 400); }
+        if (!Array.isArray(key) || key.length !== 2 ||
+          typeof key[0] !== "string" || !/^\d{4}-\d{2}-\d{2}T[\d:.]+(?:Z|[+-]\d{2}:\d{2})$/.test(key[0]) ||
+          !Number.isFinite(Date.parse(key[0])) ||
+          typeof key[1] !== "string" || !/^[0-9a-f-]{36}$/i.test(key[1])) {
+          return json({ error: "invalid_cursor" }, 400);
+        }
+        query = query.or(`captured_at.lt.${key[0]},and(captured_at.eq.${key[0]},id.lt.${key[1]})`);
+      }
+      const { data, error } = await query.order("captured_at", { ascending: false }).order("id", { ascending: false }).limit(limit + 1);
       if (error) throw error;
-      const rows = data ?? [];
+      const rows = (data ?? []).slice(0, limit);
       const activeIds = rows.map((row) => row.id);
       const { data: attentionRows, error: attentionError } = activeIds.length === 0
         ? { data: [], error: null }
@@ -997,7 +1011,8 @@ if (route === "/search" && request.method === "POST") {
           repeat_next_on: attention.get(memo.id)?.repeat_next_on ?? null,
           ...dialogue[index]
         })),
-        next_cursor: null
+        next_cursor: (data ?? []).length > limit && rows.length
+          ? JSON.stringify([rows.at(-1)!.captured_at, rows.at(-1)!.id]) : null
       });
     }
 
