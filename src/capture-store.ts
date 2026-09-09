@@ -56,6 +56,14 @@ export interface DoLaterDeferral {
   deferred_at: string;
 }
 
+export interface AttentionHistoryItem {
+  id: string;
+  memo_id: string;
+  attention_level: AttentionLevel;
+  started_at: string;
+  ended_at: string | null;
+}
+
 interface StoredDoLaterDeferral extends DoLaterDeferral {}
 
 interface StoredDoLaterItem {
@@ -111,6 +119,7 @@ interface StoredCaptureData {
   do_later: StoredDoLaterItem[];
   do_later_deferrals?: StoredDoLaterDeferral[];
   search_insights?: SearchTerm[];
+  attention_history?: AttentionHistoryItem[];
 }
 
 const titleFromText = (text: string): string => {
@@ -123,6 +132,7 @@ export class CaptureStore {
   private doLater = new Map<string, StoredDoLaterItem>();
   private doLaterDeferrals: StoredDoLaterDeferral[] = [];
   private searchInsights = new Map<string, SearchTerm>();
+  private attentionHistory: AttentionHistoryItem[] = [];
 
   constructor(
     private readonly filePath: string,
@@ -136,6 +146,7 @@ export class CaptureStore {
       const doLater = Array.isArray(parsed) ? [] : (parsed.do_later ?? []);
       const doLaterDeferrals = Array.isArray(parsed) ? [] : (parsed.do_later_deferrals ?? []);
       const searchInsights = Array.isArray(parsed) ? [] : (parsed.search_insights ?? []);
+      const attentionHistory = Array.isArray(parsed) ? [] : (parsed.attention_history ?? []);
       this.memos = new Map(memos.map((memo) => [memo.id, memo]));
       this.searchInsights = new Map(searchInsights.map((item) => [item.text, item]));
       this.doLater = new Map(doLater.map((item) => [item.memo_id, {
@@ -152,6 +163,7 @@ export class CaptureStore {
         ...(item as Partial<StoredDoLaterItem>)
       } as StoredDoLaterItem]));
       this.doLaterDeferrals = doLaterDeferrals;
+      this.attentionHistory = attentionHistory;
       for (const memo of memos.filter((item) => !item.deleted_at)) await this.index(memo);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
@@ -167,6 +179,7 @@ export class CaptureStore {
       do_later: [...this.doLater.values()],
       do_later_deferrals: this.doLaterDeferrals,
       search_insights: [...this.searchInsights.values()]
+      ,attention_history: this.attentionHistory
     };
     await fs.writeFile(temporary, JSON.stringify(data, null, 2), "utf8");
     await fs.rename(temporary, this.filePath);
@@ -320,6 +333,10 @@ export class CaptureStore {
     const memo = this.memos.get(id);
     if (!memo || memo.deleted_at) return null;
     const previous = this.doLater.get(id);
+    if (!previous || previous.attention_level !== attentionLevel) {
+      this.closeAttentionHistory(id, now);
+      this.attentionHistory.push({ id: crypto.randomUUID(), memo_id: id, attention_level: attentionLevel, started_at: now, ended_at: null });
+    }
     const item: StoredDoLaterItem = {
       ...(previous ?? {
         deferred_at: null,
@@ -354,10 +371,30 @@ export class CaptureStore {
     const memo = this.memos.get(id);
     const current = this.doLater.get(id);
     if (!memo || memo.deleted_at || !current || current.status !== "active") return null;
+    this.closeAttentionHistory(id, now);
+    this.attentionHistory.push({ id: crypto.randomUUID(), memo_id: id, attention_level: attentionLevel, started_at: now, ended_at: null });
     const item: StoredDoLaterItem = { ...current, attention_level: attentionLevel, updated_at: now };
     this.doLater.set(id, item);
     await this.persist();
     return { ...item, memo };
+  }
+
+  private closeAttentionHistory(memoId: string, endedAt: string): void {
+    for (const item of this.attentionHistory) if (item.memo_id === memoId && item.ended_at === null) item.ended_at = endedAt;
+  }
+
+  listAttentionHistory(): AttentionHistoryItem[] {
+    return [...this.attentionHistory].sort((left, right) => right.started_at.localeCompare(left.started_at));
+  }
+
+  async clearAttentionLevel(id: string, now = new Date().toISOString()): Promise<boolean> {
+    const current = this.doLater.get(id);
+    const memo = this.memos.get(id);
+    if (!current || !memo || memo.deleted_at) return false;
+    this.closeAttentionHistory(id, now);
+    this.doLater.delete(id);
+    await this.persist();
+    return true;
   }
 
   async updateDoLater(

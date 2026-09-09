@@ -143,6 +143,15 @@ export interface DoLaterConfiguration {
   repeat_daily?: boolean;
 }
 
+export interface AttentionHistoryItem {
+  id: string;
+  memo_id: string;
+  attention_level: AttentionLevel;
+  started_at: string;
+  ended_at: string | null;
+  memo: Memo;
+}
+
 export interface WorkspaceSummary {
   workspace_id: string;
   memo_id: string;

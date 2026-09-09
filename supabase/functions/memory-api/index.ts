@@ -430,6 +430,23 @@ const loadDoLaterDeferrals = async (admin: AdminClient, ownerId: string) => {
   })));
 };
 
+const loadAttentionHistory = async (admin: AdminClient, ownerId: string) => {
+  const { data: rows, error } = await admin.from("memo_attention_history")
+    .select("id,memo_id,attention_level,started_at,ended_at")
+    .eq("owner_id", ownerId).order("started_at", { ascending: false }).limit(1000);
+  if (error) throw error;
+  const memoIds = [...new Set((rows ?? []).map((row) => row.memo_id))];
+  const { data: memoRows, error: memoError } = memoIds.length === 0
+    ? { data: [], error: null }
+    : await admin.from("captured_memos").select("*").eq("owner_id", ownerId).in("id", memoIds);
+  if (memoError) throw memoError;
+  const memoMap = new Map((await decryptMemos(admin, ownerId, memoRows ?? [])).map((memo) => [memo.id, memo]));
+  return (rows ?? []).flatMap((row) => {
+    const memo = memoMap.get(row.memo_id);
+    return memo ? [{ id: row.id, memo_id: row.memo_id, attention_level: row.attention_level, started_at: row.started_at, ended_at: row.ended_at ?? null, memo }] : [];
+  });
+};
+
 const loadHomeMemos = async (admin: AdminClient, ownerId: string, cursor: string | null) => {
   const { data: itemRows, error: itemError } = await admin.from("memo_later_items")
     .select("memo_id,attention_level,activated_at")
@@ -992,6 +1009,10 @@ if (route === "/search" && request.method === "POST") {
       return json({ items: await loadDoLaterDeferrals(admin, ownerId) });
     }
 
+    if (route === "/attention-history" && request.method === "GET") {
+      return json({ items: await loadAttentionHistory(admin, ownerId) });
+    }
+
     if (route === "/do-later" && request.method === "GET") {
       const requestedView = new URL(request.url).searchParams.get("view") ?? "active";
       if (!["active", "resolved"].includes(requestedView)) {
@@ -1029,6 +1050,9 @@ if (route === "/search" && request.method === "POST") {
               roulette_enabled: false, repeat_daily: repeatDaily ?? false, repeat_next_on: null
             });
         if (result.error) throw result.error;
+        const { data: openHistory } = await admin.from("memo_attention_history").select("id").eq("memo_id", memoId).eq("owner_id", ownerId).is("ended_at", null);
+        if (openHistory?.length) await admin.from("memo_attention_history").update({ ended_at: now }).in("id", openHistory.map((row) => row.id));
+        await admin.from("memo_attention_history").insert({ memo_id: memoId, owner_id: ownerId, attention_level: attentionLevel, started_at: now });
         return json({ item: await loadDoLaterItem(admin, ownerId, memoId) }, 201);
       }
       if (request.method === "PATCH") {
@@ -1058,6 +1082,13 @@ if (route === "/search" && request.method === "POST") {
             if (error) throw error;
           }
           return json({ item: await loadDoLaterItem(admin, ownerId, memoId) });
+        }
+        if (body.attention_level === null) {
+          const { error } = await admin.from("memo_later_items").delete().eq("memo_id", memoId).eq("owner_id", ownerId);
+          if (error) throw error;
+          const { error: historyError } = await admin.from("memo_attention_history").update({ ended_at: now }).eq("memo_id", memoId).eq("owner_id", ownerId).is("ended_at", null);
+          if (historyError) throw historyError;
+          return json({ item: null });
         }
         if (body.attention_level !== undefined) {
           const attentionLevel = String(body.attention_level);
@@ -1105,6 +1136,10 @@ if (route === "/search" && request.method === "POST") {
             p_deferred_at: now
           });
           if (error) throw error;
+          const { data: openHistory } = await admin.from("memo_attention_history").select("id").eq("memo_id", memoId).eq("owner_id", ownerId).is("ended_at", null);
+          if (openHistory?.length) await admin.from("memo_attention_history").update({ ended_at: now }).in("id", openHistory.map((row) => row.id));
+          const { error: historyError } = await admin.from("memo_attention_history").insert({ memo_id: memoId, owner_id: ownerId, attention_level: attentionLevel, started_at: now });
+          if (historyError) throw historyError;
           return json({ item: await loadDoLaterItem(admin, ownerId, memoId) });
         }
         const repeatingToday = Boolean(current.repeat_daily) && (action === "done" || action === "later");

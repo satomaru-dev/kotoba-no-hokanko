@@ -2,6 +2,7 @@ import { createClient, type Session } from "@supabase/supabase-js";
 import { readAuthReturn } from "./auth";
 import type {
   AttentionLevel,
+  AttentionHistoryItem,
   CaptureInput,
   CaptureResponse,
   DoLaterAction,
@@ -186,6 +187,11 @@ export const listDoLaterDeferrals = async (): Promise<DoLaterDeferral[]> => {
   return result.items;
 };
 
+export const listAttentionHistory = async (): Promise<AttentionHistoryItem[]> => {
+  const result = await request<{ items: AttentionHistoryItem[] }>("/attention-history");
+  return result.items;
+};
+
 export const addDoLater = async (memoId: string, attentionLevel: AttentionLevel = "do_later", repeatDaily?: boolean): Promise<DoLaterItem> => {
   const result = await request<{ item: DoLaterItem }>(`/memos/${memoId}/do-later`, {
     method: "POST",
@@ -214,7 +220,7 @@ export const reorderDoLater = async (memoId: string, order: string[]): Promise<D
   return result.item;
 };
 
-export const updateDoLaterAttention = async (memoId: string, attentionLevel: AttentionLevel): Promise<DoLaterItem> => {
+export const updateDoLaterAttention = async (memoId: string, attentionLevel: AttentionLevel | null): Promise<DoLaterItem | null> => {
   const result = await request<{ item: DoLaterItem }>(`/memos/${memoId}/do-later`, {
     method: "PATCH",
     body: JSON.stringify({ attention_level: attentionLevel })
