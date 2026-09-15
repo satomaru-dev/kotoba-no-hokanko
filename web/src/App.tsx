@@ -1148,7 +1148,7 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
                     type="button"
                     onClick={() => openDoLater(item)}>
                     <time>{formatRelativeDate(item.memo.captured_at)}</time>
-                    {item.repeat_daily && <span className="repeat-daily-badge" aria-label="毎日くり返す">↻ 毎日</span>}
+                    {item.repeat_daily && <span className="repeat-daily-badge" aria-label="だいたい毎日">↻ だいたい毎日</span>}
 
                     {START_ASSIST_BETA && item.first_step && (
                       <em className="first-step-preview">まず、これだけ：{item.first_step}</em>
@@ -1547,7 +1547,7 @@ const AttentionChooser = ({ onSelect, onClose, initialRepeatDaily = false }: { o
   <section className="reminder-chooser attention-chooser">
     <div><strong>{"\u3053\u306e\u8a00\u8449\u3092\u3001\u3069\u3093\u306a\u3075\u3046\u306b\u6b8b\u3057\u3066\u304a\u304f\uff1f"}</strong><button aria-label="close" onClick={onClose}>x</button></div>
     <p>{"\u65e5\u6642\u3067\u306f\u306a\u304f\u3001\u4eca\u306e\u81ea\u5206\u3068\u306e\u8ddd\u96e2\u611f\u3092\u9078\u3073\u307e\u3059\u3002"}</p>
-    <label className="repeat-daily-option"><input type="checkbox" id="repeat-daily-setting" defaultChecked={initialRepeatDaily} /> 毎日くり返す</label>
+    <label className="repeat-daily-option"><input type="checkbox" id="repeat-daily-setting" defaultChecked={initialRepeatDaily} /> だいたい毎日</label>
     <div className="attention-options">
       <button onClick={() => onSelect("do_later", (document.getElementById("repeat-daily-setting") as HTMLInputElement)?.checked ?? false)}><strong>{"\u3042\u3068\u3067\u3084\u308b"}</strong><small>{"\u884c\u52d5\u306b\u3064\u306a\u304c\u308a\u305d\u3046"}</small></button>
       <button onClick={() => onSelect("keep_in_mind", false)}><strong>{"\u3057\u3070\u3089\u304f\u898b\u3048\u308b\u3068\u3053\u308d\u306b\u7f6e\u3044\u3066\u304a\u304d\u305f\u3044"}</strong><small>{"\u4eca\u306e\u81ea\u5206\u306e\u4e2d\u306b\u7f6e\u3044\u3066\u304a\u304f"}</small></button>
