@@ -11,5 +11,6 @@
     "skipLibCheck": true,
     "types": ["vite/client", "vitest/globals"]
   },
-  "include": ["web/src/**/*.ts", "web/src/**/*.tsx", "vite.config.ts", "vitest.config.ts"]
+  "include": ["web/src/**/*.ts", "web/src/**/*.tsx", "vite.config.ts", "vitest.config.ts"],
+  "exclude": ["web/src/App-satomaru.tsx"]
 }

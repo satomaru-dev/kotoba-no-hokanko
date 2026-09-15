@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CaptureStore } from "../src/capture-store.js";
 import { HashEmbeddingProvider } from "../src/embeddings.js";
 import { FileMemoryRepository } from "../src/file-repository.js";
@@ -33,6 +33,55 @@ const makeStore = async () => {
 };
 
 describe("capture store", () => {
+  it("stores a purpose, preserves past purposes, and excludes storage from home", async () => {
+    const { store } = await makeStore();
+    await store.capture("purpose", "原文", "2026-09-01T00:00:00.000Z");
+    await store.addDoLater("purpose", "keep_in_mind");
+    expect(store.listHomeMemos().memos).toHaveLength(1);
+    await store.addDoLater("purpose", "keep_for_use", "2026-09-02T00:00:00.000Z", false, "  旅行  ");
+    expect(store.listHomeMemos().memos).toHaveLength(0);
+    expect(store.list()[0]).toMatchObject({ storage_purpose: "旅行", original_text: "原文" });
+    await store.addDoLater("purpose", "keep_for_use", "2026-09-03T00:00:00.000Z", false, "旅行");
+    expect(store.listAttentionHistory()).toHaveLength(2);
+    await store.updateAttentionLevel("purpose", "keep_for_use", "2026-09-04T00:00:00.000Z", "ブログ");
+    expect(store.listAttentionHistory().map(h => h.storage_purpose)).toContain("旅行");
+    await store.clearAttentionLevel("purpose");
+    expect(store.list()[0]).toMatchObject({ attention_level: null, storage_purpose: null });
+    expect(store.listAttentionHistory()).toHaveLength(3);
+    await store.trash("purpose");
+    expect(store.listAttentionHistoryPage().items).toHaveLength(0);
+    await store.restore("purpose");
+    expect(store.listAttentionHistoryPage().items).toHaveLength(3);
+  });
+
+  it("rejects invalid purposes and rolls back both state and history on disk failure", async () => {
+    const { store } = await makeStore();
+    await store.capture("purpose", "本文", "2026-09-01T00:00:00.000Z");
+    await store.addDoLater("purpose", "keep_in_mind");
+    await expect(store.addDoLater("purpose", "keep_for_use", undefined, false, " ")).rejects.toThrow("invalid_storage_purpose");
+    await expect(store.addDoLater("purpose", "keep_for_use", undefined, false, "x".repeat(101))).rejects.toThrow();
+    const before = store.listAttentionHistory();
+    const rename = vi.spyOn(fs, "rename").mockRejectedValueOnce(new Error("disk failure"));
+    await expect(store.addDoLater("purpose", "keep_for_use", undefined, false, "旅行")).rejects.toThrow("disk failure");
+    expect(store.list()[0]).toMatchObject({ attention_level: "keep_in_mind" });
+    expect(store.listAttentionHistory()).toEqual(before);
+    rename.mockRejectedValueOnce(new Error("disk failure"));
+    await expect(store.clearAttentionLevel("purpose")).rejects.toThrow("disk failure");
+    expect(store.listAttentionHistory()).toEqual(before);
+    rename.mockRestore();
+  });
+
+  it("pages over 100 history periods with tied dates without omissions", async () => {
+    const { store } = await makeStore();
+    await store.capture("purpose", "本文", "2026-09-01T00:00:00.000Z");
+    for (let i = 0; i < 105; i++) await store.addDoLater("purpose", "keep_for_use", "2026-09-02T00:00:00.000Z", false, String(i));
+    const first = store.listAttentionHistoryPage();
+    const second = store.listAttentionHistoryPage(first.next_cursor);
+    expect(first.items).toHaveLength(100);
+    expect(second.items).toHaveLength(5);
+    expect(new Set([...first.items, ...second.items].map(h => h.id)).size).toBe(105);
+    expect(second.next_cursor).toBeNull();
+  });
   it("pages all memos with tied timestamps without missing IDs and separates trash", async () => {
     const { store } = await makeStore();
     for (let i = 0; i < 105; i++) await store.capture(String(i).padStart(8, "0"), "memo", "2026-09-01T00:00:00.000Z");

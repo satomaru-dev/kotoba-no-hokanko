@@ -2,7 +2,9 @@ import type { DoLaterItem, Memo } from "./types";
 
 export const mergeMemo = (previous: Memo, updated: Memo): Memo => ({
   ...updated,
-  attention_level: updated.attention_level ?? previous.attention_level ?? null
+  attention_level: updated.attention_level === undefined ? previous.attention_level ?? null : updated.attention_level,
+  storage_purpose: updated.attention_level === null ? null
+    : updated.storage_purpose === undefined ? previous.storage_purpose ?? null : updated.storage_purpose
 });
 
 export const replaceMemo = (items: Memo[], updated: Memo): Memo[] =>

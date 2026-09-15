@@ -332,3 +332,27 @@ button:disabled { cursor: default; }
 
 .heavy-mark { display: inline-block; margin: 0 0 7px; padding: 4px 8px; border-radius: 999px; background: var(--primary-bg); color: var(--primary-text); font-size: 11px; font-weight: 700; }
 .later-reason-heavy { border: 1px solid var(--line); background: var(--primary-bg); color: var(--primary-text); }
+.placement-fields {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+}
+.placement-fields input:not([type="checkbox"]), .placement-history select, .recent-group select {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid #EDE5D8;
+  border-radius: 12px;
+  background: white;
+  color: #1F1A15;
+  font: inherit;
+}
+.placement-caption { color: #7A6E60; overflow-wrap: anywhere; }
+.placement-history { margin: 16px 0; }
+.placement-history summary { cursor: pointer; padding: 12px 0; }
+.placement-history label { display: block; margin: 12px 0; }
+.placement-history p { overflow-wrap: anywhere; }

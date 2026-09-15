@@ -1,7 +1,23 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { listMemos } from "./api";
+import { listMemos, listAttentionHistory } from "./api";
 
 afterEach(() => vi.unstubAllGlobals());
+it("loads every history page, including pages containing only trashed records", async () => {
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify({ items: [], next_cursor: "page2" })))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ items: [{ id: "old" }], next_cursor: null })));
+  vi.stubGlobal("fetch", fetchMock);
+  expect(await listAttentionHistory()).toEqual([{ id: "old" }]);
+  expect(fetchMock.mock.calls[1]![0]).toContain("cursor=page2");
+});
+it("rejects partial history and repeated cursors", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [], next_cursor: "same" }))));
+  await expect(listAttentionHistory()).rejects.toThrow();
+  vi.stubGlobal("fetch", vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify({ items: [], next_cursor: "next" })))
+    .mockResolvedValueOnce(new Response("{}", { status: 500 })));
+  await expect(listAttentionHistory()).rejects.toThrow();
+});
 it("loads beyond 50 and 100 memos, carrying the cursor and deleted flag", async () => {
   const fetchMock = vi.fn()
     .mockResolvedValueOnce(new Response(JSON.stringify({ memos: Array.from({ length: 100 }, (_, id) => ({ id: String(id) })), next_cursor: '["2026-09-01T00:00:00Z","99"]' })))

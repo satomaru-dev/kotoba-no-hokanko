@@ -26,6 +26,7 @@ export interface MemoRevision {
 }
 
 export interface Memo {
+  storage_purpose?: string | null;
   id: string;
   original_text: string;
   current_text: string;
@@ -105,11 +106,12 @@ export interface ReminderInput {
   remind_at: string;
 }
 
-export type AttentionLevel = "do_later" | "keep_in_mind" | "important_insight" | "app_improvement";
+export type AttentionLevel = "do_later" | "keep_in_mind" | "important_insight" | "app_improvement" | "keep_for_use";
 export type DoLaterStatus = "active" | "done" | "abandoned";
 export type DoLaterAction = "done" | "later" | "abandon";
 
 export interface DoLaterItem {
+  storage_purpose?: string | null;
   memo_id: string;
   status: DoLaterStatus;
   activated_at: string;
@@ -144,6 +146,7 @@ export interface DoLaterConfiguration {
 }
 
 export interface AttentionHistoryItem {
+  storage_purpose?: string | null;
   id: string;
   memo_id: string;
   attention_level: AttentionLevel;

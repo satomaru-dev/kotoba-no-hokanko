@@ -1,4 +1,4 @@
-import { createClient } from "npm:@supabase/supabase-js@2.57.4";
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.57.4";
 import webpush from "npm:web-push@3.6.7";
 
 const corsHeaders = {
@@ -21,12 +21,12 @@ const bytesToBase64 = (bytes: Uint8Array): string => {
   return btoa(binary);
 };
 
-const base64ToBytes = (value: string): Uint8Array => {
+const base64ToBytes = (value: string): Uint8Array<ArrayBuffer> => {
   const binary = atob(value);
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 };
 
-const secretBytes = (): Uint8Array => {
+const secretBytes = (): Uint8Array<ArrayBuffer> => {
   const value = Deno.env.get("MEMORY_ENCRYPTION_KEY");
   if (!value) throw new Error("MEMORY_ENCRYPTION_KEY is missing");
   const bytes = base64ToBytes(value);
@@ -122,7 +122,7 @@ const sensitiveImport = (sourceUri: string, text: string): boolean =>
   || /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\bsk-[A-Za-z0-9_-]{20,}\b|\bAIza[0-9A-Za-z_-]{25,}\b/i
     .test(text);
 
-type AdminClient = ReturnType<typeof createClient>;
+type AdminClient = SupabaseClient;
 type CandidateRow = {
   memory_id: string;
   source_type: string;
@@ -337,10 +337,12 @@ const decryptMemos = async (admin: AdminClient, ownerId: string, rows: Record<st
 const loadDoLaterItems = async (
   admin: AdminClient,
   ownerId: string,
-  view: "active" | "resolved"
+  view: "active" | "resolved",
+  memoId?: string
 ) => {
   const today = jstDate(new Date());
   let query = admin.from("memo_later_items").select("*").eq("owner_id", ownerId);
+  if (memoId) query = query.eq("memo_id", memoId);
   query = view === "active"
     ? query.eq("status", "active")
       .order("manual_order", { ascending: true, nullsFirst: true })
@@ -350,7 +352,7 @@ const loadDoLaterItems = async (
   const { data: rawItems, error } = await query.limit(100);
   if (error) throw error;
   const items = [...(rawItems ?? [])]
-    .filter((item) => view !== "active" || !item.repeat_daily || !item.repeat_next_on || item.repeat_next_on <= today)
+    .filter((item) => Boolean(memoId) || view !== "active" || !item.repeat_daily || !item.repeat_next_on || item.repeat_next_on <= today)
     .sort((left, right) => {
     if (view !== "active") return (right.resolved_at ?? right.updated_at).localeCompare(left.resolved_at ?? left.updated_at);
     if (Boolean(left.repeat_daily) !== Boolean(right.repeat_daily)) return left.repeat_daily ? -1 : 1;
@@ -385,7 +387,9 @@ const loadDoLaterItems = async (
       activated_at: item.activated_at,
       deferred_at: item.deferred_at ?? null,
       bottom_order: item.bottom_order ?? null,
+      manual_order: item.manual_order ?? null,
       attention_level: item.attention_level ?? "do_later",
+      storage_purpose: item.storage_purpose_ciphertext ? await decrypt(item.storage_purpose_ciphertext) : null,
       heavy_marked: Boolean(item.heavy_marked),
       updated_at: item.updated_at,
       resolved_at: item.resolved_at,
@@ -401,10 +405,10 @@ const loadDoLaterItems = async (
 };
 
 const loadDoLaterItem = async (admin: AdminClient, ownerId: string, memoId: string) => {
-  const active = (await loadDoLaterItems(admin, ownerId, "active"))
+  const active = (await loadDoLaterItems(admin, ownerId, "active", memoId))
     .find((item) => item.memo_id === memoId);
   if (active) return active;
-  return (await loadDoLaterItems(admin, ownerId, "resolved"))
+  return (await loadDoLaterItems(admin, ownerId, "resolved", memoId))
     .find((item) => item.memo_id === memoId) ?? null;
 };
 
@@ -430,21 +434,54 @@ const loadDoLaterDeferrals = async (admin: AdminClient, ownerId: string) => {
   })));
 };
 
-const loadAttentionHistory = async (admin: AdminClient, ownerId: string) => {
-  const { data: rows, error } = await admin.from("memo_attention_history")
-    .select("id,memo_id,attention_level,started_at,ended_at")
-    .eq("owner_id", ownerId).order("started_at", { ascending: false }).limit(1000);
+const loadAttentionHistory = async (admin: AdminClient, ownerId: string, cursor: string | null) => {
+  let query = admin.from("memo_attention_history")
+    .select("id,memo_id,attention_level,storage_purpose_ciphertext,started_at,ended_at")
+    .eq("owner_id", ownerId);
+  if (cursor) {
+    let key;
+    try { key = JSON.parse(cursor); } catch { throw new Error("invalid_cursor"); }
+    if (!Array.isArray(key) || key.length !== 2 || typeof key[0] !== "string" ||
+        !/^\d{4}-\d{2}-\d{2}T[\d:.+Z-]+$/.test(key[0]) || !/^[0-9a-f-]{36}$/i.test(key[1])) throw new Error("invalid_cursor");
+    query = query.or(`started_at.lt.${key[0]},and(started_at.eq.${key[0]},id.lt.${key[1]})`);
+  }
+  const { data, error } = await query.order("started_at", { ascending: false }).order("id", { ascending: false }).limit(101);
   if (error) throw error;
-  const memoIds = [...new Set((rows ?? []).map((row) => row.memo_id))];
-  const { data: memoRows, error: memoError } = memoIds.length === 0
-    ? { data: [], error: null }
-    : await admin.from("captured_memos").select("*").eq("owner_id", ownerId).in("id", memoIds);
+  const rows = (data ?? []).slice(0, 100);
+  const memoIds = [...new Set(rows.map(row => row.memo_id))];
+  const { data: memoRows, error: memoError } = memoIds.length === 0 ? { data: [], error: null }
+    : await admin.from("captured_memos").select("*").eq("owner_id", ownerId).in("id", memoIds).is("deleted_at", null);
   if (memoError) throw memoError;
-  const memoMap = new Map((await decryptMemos(admin, ownerId, memoRows ?? [])).map((memo) => [memo.id, memo]));
-  return (rows ?? []).flatMap((row) => {
-    const memo = memoMap.get(row.memo_id);
-    return memo ? [{ id: row.id, memo_id: row.memo_id, attention_level: row.attention_level, started_at: row.started_at, ended_at: row.ended_at ?? null, memo }] : [];
+  const memoMap = new Map((await decryptMemos(admin, ownerId, memoRows ?? [])).map(memo => [memo.id, memo]));
+  const items = await Promise.all(rows.filter(row => memoMap.has(row.memo_id)).map(async row => ({
+    id: row.id, memo_id: row.memo_id, attention_level: row.attention_level,
+    storage_purpose: row.storage_purpose_ciphertext ? await decrypt(row.storage_purpose_ciphertext) : null,
+    started_at: row.started_at, ended_at: row.ended_at ?? null, memo: memoMap.get(row.memo_id)
+  })));
+  const last = rows.at(-1);
+  return { items, next_cursor: (data ?? []).length > 100 && last ? JSON.stringify([last.started_at, last.id]) : null };
+};
+
+const setPlacement = async (admin: AdminClient, ownerId: string, memoId: string, body: Record<string, unknown>, requireActive = false) => {
+  const level = body.attention_level === null ? null : String(body.attention_level ?? "do_later");
+  if (level !== null && !["do_later", "keep_in_mind", "important_insight", "app_improvement", "keep_for_use"].includes(level)) return json({ error: "invalid_request" }, 400);
+  const purpose = level === "keep_for_use" && typeof body.storage_purpose === "string" ? body.storage_purpose.trim() : "";
+  if (level === "keep_for_use" && (!purpose || purpose.length > 100)) return json({ error: "invalid_storage_purpose" }, 400);
+  if (body.repeat_daily !== undefined && typeof body.repeat_daily !== "boolean") return json({ error: "invalid_request" }, 400);
+  const { data: current, error: readError } = await admin.from("memo_later_items")
+    .select("storage_purpose_ciphertext").eq("memo_id", memoId).eq("owner_id", ownerId).maybeSingle();
+  if (readError) throw readError;
+  const previousCipher = current?.storage_purpose_ciphertext ?? null;
+  const cipher = level === "keep_for_use"
+    ? previousCipher && await decrypt(previousCipher) === purpose ? previousCipher : await encrypt(purpose)
+    : null;
+  const { error } = await admin.rpc("set_memo_placement", {
+    p_memo_id: memoId, p_owner_id: ownerId, p_level: level,
+    p_purpose_ciphertext: cipher, p_expected_purpose_ciphertext: previousCipher,
+    p_repeat_daily: body.repeat_daily ?? null, p_require_active: requireActive
   });
+  if (error) throw error;
+  return json({ item: level === null ? null : await loadDoLaterItem(admin, ownerId, memoId) }, requireActive ? 200 : 201);
 };
 
 const loadHomeMemos = async (admin: AdminClient, ownerId: string, cursor: string | null) => {
@@ -994,7 +1031,7 @@ if (route === "/search" && request.method === "POST") {
       const activeIds = rows.map((row) => row.id);
       const { data: attentionRows, error: attentionError } = activeIds.length === 0
         ? { data: [], error: null }
-        : await admin.from("memo_later_items").select("memo_id,attention_level,repeat_daily,repeat_next_on")
+        : await admin.from("memo_later_items").select("memo_id,attention_level,storage_purpose_ciphertext,repeat_daily,repeat_next_on")
           .eq("owner_id", ownerId).eq("status", "active").in("memo_id", activeIds);
       if (attentionError) throw attentionError;
       const attention = new Map((attentionRows ?? []).map((row) => [row.memo_id, row]));
@@ -1004,13 +1041,14 @@ if (route === "/search" && request.method === "POST") {
         source_type: "mobile_app"
       })));
       return json({
-        memos: decrypted.map((memo, index) => ({
+        memos: await Promise.all(decrypted.map(async (memo, index) => ({
           ...memo,
           attention_level: attention.get(memo.id)?.attention_level ?? null,
+          storage_purpose: attention.get(memo.id)?.storage_purpose_ciphertext ? await decrypt(attention.get(memo.id)!.storage_purpose_ciphertext) : null,
           repeat_daily: Boolean(attention.get(memo.id)?.repeat_daily),
           repeat_next_on: attention.get(memo.id)?.repeat_next_on ?? null,
           ...dialogue[index]
-        })),
+        }))),
         next_cursor: (data ?? []).length > limit && rows.length
           ? JSON.stringify([rows.at(-1)!.captured_at, rows.at(-1)!.id]) : null
       });
@@ -1025,7 +1063,7 @@ if (route === "/search" && request.method === "POST") {
     }
 
     if (route === "/attention-history" && request.method === "GET") {
-      return json({ items: await loadAttentionHistory(admin, ownerId) });
+      return json(await loadAttentionHistory(admin, ownerId, new URL(request.url).searchParams.get("cursor")));
     }
 
     if (route === "/do-later" && request.method === "GET") {
@@ -1048,27 +1086,7 @@ if (route === "/search" && request.method === "POST") {
       const now = new Date().toISOString();
       if (request.method === "POST") {
         const body = await request.json().catch(() => ({}));
-        const attentionLevel = String(body.attention_level ?? "do_later");
-        const repeatDaily = body.repeat_daily === undefined ? undefined : Boolean(body.repeat_daily);
-        if (!["do_later", "keep_in_mind", "important_insight", "app_improvement"].includes(attentionLevel)) return json({ error: "invalid_request" }, 400);
-        const { data: current, error: currentError } = await admin.from("memo_later_items")
-          .select("memo_id,repeat_daily").eq("memo_id", memoId).eq("owner_id", ownerId).maybeSingle();
-        if (currentError) throw currentError;
-        const result = current
-          ? await admin.from("memo_later_items").update({
-              status: "active", activated_at: now, deferred_at: null, bottom_order: null, manual_order: null, attention_level: attentionLevel, heavy_marked: false, updated_at: now, resolved_at: null,
-              repeat_daily: repeatDaily ?? Boolean(current.repeat_daily), repeat_next_on: null
-            }).eq("memo_id", memoId).eq("owner_id", ownerId)
-          : await admin.from("memo_later_items").insert({
-              memo_id: memoId, owner_id: ownerId, status: "active",
-              activated_at: now, deferred_at: null, bottom_order: null, manual_order: null, attention_level: attentionLevel, heavy_marked: false, updated_at: now, resolved_at: null,
-              roulette_enabled: false, repeat_daily: repeatDaily ?? false, repeat_next_on: null
-            });
-        if (result.error) throw result.error;
-        const { data: openHistory } = await admin.from("memo_attention_history").select("id").eq("memo_id", memoId).eq("owner_id", ownerId).is("ended_at", null);
-        if (openHistory?.length) await admin.from("memo_attention_history").update({ ended_at: now }).in("id", openHistory.map((row) => row.id));
-        await admin.from("memo_attention_history").insert({ memo_id: memoId, owner_id: ownerId, attention_level: attentionLevel, started_at: now });
-        return json({ item: await loadDoLaterItem(admin, ownerId, memoId) }, 201);
+        return await setPlacement(admin, ownerId, memoId, body);
       }
       if (request.method === "PATCH") {
         const { data: current, error: currentError } = await admin.from("memo_later_items")
@@ -1098,20 +1116,8 @@ if (route === "/search" && request.method === "POST") {
           }
           return json({ item: await loadDoLaterItem(admin, ownerId, memoId) });
         }
-        if (body.attention_level === null) {
-          const { error } = await admin.from("memo_later_items").delete().eq("memo_id", memoId).eq("owner_id", ownerId);
-          if (error) throw error;
-          const { error: historyError } = await admin.from("memo_attention_history").update({ ended_at: now }).eq("memo_id", memoId).eq("owner_id", ownerId).is("ended_at", null);
-          if (historyError) throw historyError;
-          return json({ item: null });
-        }
         if (body.attention_level !== undefined) {
-          const attentionLevel = String(body.attention_level);
-          if (!["do_later", "keep_in_mind", "important_insight", "app_improvement"].includes(attentionLevel)) return json({ error: "invalid_request" }, 400);
-          const { error } = await admin.from("memo_later_items").update({ attention_level: attentionLevel, updated_at: now })
-            .eq("memo_id", memoId).eq("owner_id", ownerId);
-          if (error) throw error;
-          return json({ item: await loadDoLaterItem(admin, ownerId, memoId) });
+          return await setPlacement(admin, ownerId, memoId, body, true);
         }
         if (body.configuration !== undefined) {
           const configuration = body.configuration as Record<string, unknown>;
@@ -1151,10 +1157,6 @@ if (route === "/search" && request.method === "POST") {
             p_deferred_at: now
           });
           if (error) throw error;
-          const { data: openHistory } = await admin.from("memo_attention_history").select("id").eq("memo_id", memoId).eq("owner_id", ownerId).is("ended_at", null);
-          if (openHistory?.length) await admin.from("memo_attention_history").update({ ended_at: now }).in("id", openHistory.map((row) => row.id));
-          const { error: historyError } = await admin.from("memo_attention_history").insert({ memo_id: memoId, owner_id: ownerId, attention_level: attentionLevel, started_at: now });
-          if (historyError) throw historyError;
           return json({ item: await loadDoLaterItem(admin, ownerId, memoId) });
         }
         const repeatingToday = Boolean(current.repeat_daily) && (action === "done" || action === "later");

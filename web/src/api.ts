@@ -201,14 +201,23 @@ export const listDoLaterDeferrals = async (): Promise<DoLaterDeferral[]> => {
 };
 
 export const listAttentionHistory = async (): Promise<AttentionHistoryItem[]> => {
-  const result = await request<{ items: AttentionHistoryItem[] }>("/attention-history");
-  return result.items;
+  const items = new Map<string, AttentionHistoryItem>();
+  const seen = new Set<string>();
+  let cursor: string | null = null;
+  do {
+    const result: { items: AttentionHistoryItem[]; next_cursor?: string | null } = await request(`/attention-history${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`);
+    for (const item of result.items) items.set(item.id, item);
+    cursor = result.next_cursor ?? null;
+    if (cursor && seen.has(cursor)) throw new Error("invalid_history_cursor");
+    if (cursor) seen.add(cursor);
+  } while (cursor);
+  return [...items.values()];
 };
 
-export const addDoLater = async (memoId: string, attentionLevel: AttentionLevel = "do_later", repeatDaily?: boolean): Promise<DoLaterItem> => {
+export const addDoLater = async (memoId: string, attentionLevel: AttentionLevel = "do_later", repeatDaily?: boolean, storagePurpose?: string): Promise<DoLaterItem> => {
   const result = await request<{ item: DoLaterItem }>(`/memos/${memoId}/do-later`, {
     method: "POST",
-    body: JSON.stringify({ attention_level: attentionLevel, ...(repeatDaily === undefined ? {} : { repeat_daily: repeatDaily }) })
+    body: JSON.stringify({ attention_level: attentionLevel, storage_purpose: storagePurpose, ...(repeatDaily === undefined ? {} : { repeat_daily: repeatDaily }) })
   });
   return result.item;
 };
@@ -233,10 +242,10 @@ export const reorderDoLater = async (memoId: string, order: string[]): Promise<D
   return result.item;
 };
 
-export const updateDoLaterAttention = async (memoId: string, attentionLevel: AttentionLevel | null): Promise<DoLaterItem | null> => {
+export const updateDoLaterAttention = async (memoId: string, attentionLevel: AttentionLevel | null, storagePurpose?: string): Promise<DoLaterItem | null> => {
   const result = await request<{ item: DoLaterItem }>(`/memos/${memoId}/do-later`, {
     method: "PATCH",
-    body: JSON.stringify({ attention_level: attentionLevel })
+    body: JSON.stringify({ attention_level: attentionLevel, storage_purpose: storagePurpose })
   });
   return result.item;
 };

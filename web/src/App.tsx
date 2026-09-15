@@ -50,6 +50,8 @@ import {
   removeQueuedCapture,
   removeQueuedReminder
 } from "./offline";
+import { AttentionChooser } from "./AttentionChooser";
+import { historicalPlacementMemos, placementLabel, placementLabels, storagePurposes } from "./placement";
 import { deferralsToCsv, jstDateForFilename } from "./do-later-export";
 import { chooseImportantMemo, readHomeMode, readRotation, writeHomeMode, writeRotation, type HomeMode } from "./home-rediscovery";
 import { mergeMemo, prependMemo, removeDoLaterMemo, removeMemo, replaceDoLaterMemo, replaceMemo } from "./memo-state";
@@ -79,7 +81,7 @@ const START_ASSIST_BETA = import.meta.env.VITE_START_ASSIST_BETA !== "false";
 const SEARCH_INSIGHTS_KEY = "kotoba-search-insights-v1";
 
 const emptySearchInsights = (): SearchInsights => ({ recent: [], frequent: [] });
-const attentionLabel = (level: AttentionLevel): string => ({ do_later: "\u3042\u3068\u3067\u3084\u308b", keep_in_mind: "\u3057\u3070\u3089\u304f\u898b\u3048\u308b\u3068\u3053\u308d\u306b\u7f6e\u3044\u3066\u304a\u304d\u305f\u3044", important_insight: "\u4eca\u306e\u81ea\u5206\u306b\u3068\u3063\u3066\u7d50\u69cb\u91cd\u8981\u306a\u6c17\u3065\u304d", app_improvement: "\u8a00\u8449\u306e\u4fdd\u7ba1\u5eab\u306e\u6539\u5584\u30a2\u30a4\u30c7\u30a2" }[level]);
+const attentionLabel = placementLabel;
 const readCachedSearchInsights = (): SearchInsights => {
   try {
     const value = localStorage.getItem(SEARCH_INSIGHTS_KEY);
@@ -243,6 +245,7 @@ const MemoRow = ({
     <button className="memo-row-main" onClick={onOpen}>
       <time>{formatRelativeDate(memo.captured_at)}</time>
       <span>{memo.current_text}</span>
+      {memo.attention_level === "keep_for_use" && memo.storage_purpose && <small className="placement-caption">{placementLabel("keep_for_use", memo.storage_purpose)}</small>}
     </button>
     {DIALOGUE_BETA && memo.has_dialogue && memo.thread_id && (
       <div className="memo-dialogue-preview">
@@ -315,6 +318,18 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
   const [searchInsights, setSearchInsights] = useState<SearchInsights>({ recent: [], frequent: [] });
   const [memos, setMemos] = useState<Memo[]>([]);
   const [attentionHistory, setAttentionHistory] = useState<AttentionHistoryItem[]>([]);
+  const [purposeFilter, setPurposeFilter] = useState("");
+  const [historyLevel, setHistoryLevel] = useState("");
+  const [historyPurpose, setHistoryPurpose] = useState("");
+  const [historyError, setHistoryError] = useState(false);
+  const historyGeneration = useRef(0);
+  const refreshAttentionHistory = useCallback(async () => {
+    const generation = ++historyGeneration.current;
+    try {
+      const items = await listAttentionHistory();
+      if (generation === historyGeneration.current) { setAttentionHistory(items); setHistoryError(false); }
+    } catch { if (generation === historyGeneration.current) setHistoryError(true); }
+  }, []);
   const [trash, setTrash] = useState<Memo[]>([]);
   const [doLaterActive, setDoLaterActive] = useState<DoLaterItem[]>([]);
   const [doLaterResolved, setDoLaterResolved] = useState<DoLaterItem[]>([]);
@@ -402,6 +417,13 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
     } finally { setHomeLoading(false); }
   }, [session]);
 
+  useEffect(() => {
+    ++historyGeneration.current;
+    setAttentionHistory([]);
+    setPurposeFilter(""); setHistoryLevel(""); setHistoryPurpose("");
+    if (!cloudMode || session) void refreshAttentionHistory();
+    return () => { ++historyGeneration.current; };
+  }, [session, refreshAttentionHistory]);
   useEffect(() => { void refreshHomeMemos(); }, [refreshHomeMemos]);
 
   const rotateImportant = useCallback(() => {
@@ -496,6 +518,8 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
   }, []);
 
   const applyMemoMutation = useCallback((kind: "updated" | "trashed" | "restored", updated: Memo, previous: Memo) => {
+    void refreshHomeMemos();
+    void refreshAttentionHistory();
     memoStateGeneration.current += 1;
     memoRefreshRequest.current += 1;
     const displayMemo = mergeMemo(previous, updated);
@@ -516,7 +540,7 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
     }
 
     setSelected(null);
-  }, []);
+  }, [refreshHomeMemos, refreshAttentionHistory]);
 
   const refreshDueReminders = useCallback(async () => {
     if (!REMINDER_BETA || (cloudMode && !session)) return;
@@ -548,7 +572,7 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
   useEffect(() => {
     if (tab === "recent" && (!cloudMode || session)) {
       void refreshMemos();
-      void listAttentionHistory().then(setAttentionHistory).catch(() => setAttentionHistory([]));
+      void refreshAttentionHistory();
     }
   }, [tab, session, refreshMemos]);
   useEffect(() => {
@@ -712,16 +736,19 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
     }
   };
 
-  const chooseAttention = async (attentionLevel: AttentionLevel, repeatDaily: boolean) => {
-    if (!lastSavedMemo) return;
+  const chooseAttention = async (attentionLevel: AttentionLevel, repeatDaily = false, purpose?: string): Promise<boolean> => {
+    if (!lastSavedMemo) return false;
     try {
-      await addDoLater(lastSavedMemo.id, attentionLevel, repeatDaily);
-      await Promise.all([refreshDoLater(), refreshMemos()]);
+      const item = await addDoLater(lastSavedMemo.id, attentionLevel, repeatDaily, purpose);
+      setLastSavedMemo(memo => memo ? { ...memo, attention_level: attentionLevel, storage_purpose: item.storage_purpose } : memo);
+      await Promise.all([refreshDoLater(), refreshMemos(), refreshHomeMemos(), refreshAttentionHistory()]);
       setShowReminder(false);
-      setNotice(`「${attentionLabel(attentionLevel)}」に置きました。`);
+      setNotice(`「${attentionLabel(attentionLevel, purpose)}」に置きました。`);
       triggerReaction();
+      return true;
     } catch {
-      setNotice("今は重要度を保存できませんでした。メモは残っています。");
+      setNotice("今は置き場所を保存できませんでした。メモは残っています。");
+      return false;
     }
   };
 
@@ -739,7 +766,7 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
   const markDoLater = async (memo: Memo) => {
     try {
       await addDoLater(memo.id);
-      await Promise.all([refreshDoLater(), refreshMemos()]);
+      await Promise.all([refreshDoLater(), refreshMemos(), refreshHomeMemos(), refreshAttentionHistory()]);
       setNotice("「あとでやる」に置きました。");
       triggerReaction();
     } catch {
@@ -747,14 +774,17 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
     }
   };
 
-  const setAttentionForMemo = async (memo: Memo, attentionLevel: AttentionLevel, repeatDaily = false) => {
+  const setAttentionForMemo = async (memo: Memo, attentionLevel: AttentionLevel, repeatDaily = false, purpose?: string): Promise<boolean> => {
     try {
-      await addDoLater(memo.id, attentionLevel, repeatDaily);
-      await Promise.all([refreshDoLater(), refreshMemos()]);
-      setNotice(`「${attentionLabel(attentionLevel)}」に変更しました。`);
+      const item = await addDoLater(memo.id, attentionLevel, repeatDaily, purpose);
+      setSelected(current => current?.id === memo.id ? { ...current, attention_level: attentionLevel, storage_purpose: item.storage_purpose, repeat_daily: item.repeat_daily } : current);
+      await Promise.all([refreshDoLater(), refreshMemos(), refreshHomeMemos(), refreshAttentionHistory()]);
+      setNotice(`「${attentionLabel(attentionLevel, purpose)}」に変更しました。`);
       triggerReaction();
+      return true;
     } catch {
-      setNotice("重要度を変更できませんでした。メモは変わっていません。");
+      setNotice("置き場所を変更できませんでした。メモは変わっていません。");
+      return false;
     }
   };
 
@@ -788,9 +818,9 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
   const clearAttentionForMemo = async (memo: Memo) => {
     try {
       await updateDoLaterAttention(memo.id, null);
-      await Promise.all([refreshDoLater(), refreshMemos()]);
+      await Promise.all([refreshDoLater(), refreshMemos(), refreshHomeMemos(), refreshAttentionHistory()]);
       setSelected(null);
-      setNotice("普通のメモに戻しました。以前の重要度は履歴に残っています。");
+      setNotice("普通のメモに戻しました。以前の置き場所は履歴に残っています。");
     } catch {
       setNotice("普通のメモに戻せませんでした。メモは変わっていません。");
     }
@@ -986,8 +1016,11 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
   const recentKeepInMind = recentSource.filter((memo) => memo.attention_level === "keep_in_mind");
   const recentImportant = recentSource.filter((memo) => memo.attention_level === "important_insight");
   const recentAppImprovement = recentSource.filter((memo) => memo.attention_level === "app_improvement");
-  const recentOther = recentSource.filter((memo) => memo.attention_level !== "keep_in_mind" && memo.attention_level !== "important_insight" && memo.attention_level !== "app_improvement" && memo.attention_level !== "do_later");
-  const historicalMemos = [...new Map(attentionHistory.map((item) => [item.memo_id, item.memo])).values()];
+  const recentOther = recentSource.filter((memo) => memo.attention_level !== "keep_in_mind" && memo.attention_level !== "important_insight" && memo.attention_level !== "app_improvement" && memo.attention_level !== "do_later" && memo.attention_level !== "keep_for_use");
+  const purposes = storagePurposes(recentSource, attentionHistory);
+  const storedMemos = recentSource.filter(m => m.attention_level === "keep_for_use");
+  const currentPurposes = storagePurposes(storedMemos, []);
+  const historicalMemos = historicalPlacementMemos(attentionHistory, recentSource, historyLevel, historyPurpose);
   const homeImportant = homeMemos.find((memo) => memo.id === importantId) ?? null;
   const homeKeep = homeMemos.filter((memo) => memo.attention_level === "keep_in_mind");
 
@@ -1107,7 +1140,8 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
             )}
             {showReminder && lastSavedMemo && (
       <AttentionChooser
-                onSelect={(level, repeatDaily) => void chooseAttention(level, repeatDaily ?? false)}
+                purposes={purposes}
+                onSelect={chooseAttention}
                 onClose={() => setShowReminder(false)}
               />
             )}
@@ -1148,7 +1182,7 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
                     type="button"
                     onClick={() => openDoLater(item)}>
                     <time>{formatRelativeDate(item.memo.captured_at)}</time>
-                    {item.repeat_daily && <span className="repeat-daily-badge" aria-label="だいたい毎日">↻ だいたい毎日</span>}
+                    {item.repeat_daily && <span className="repeat-daily-badge" aria-label="毎日くり返す">↻ 毎日</span>}
 
                     {START_ASSIST_BETA && item.first_step && (
                       <em className="first-step-preview">まず、これだけ：{item.first_step}</em>
@@ -1299,7 +1333,17 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
                 {recentKeepInMind.length > 0 && <section className="recent-group"><h2 className="recent-group-title">しばらく見えるところに置いておきたい</h2><div className="memo-list">{recentKeepInMind.map((memo) => <MemoRow key={memo.id} memo={memo} onOpen={() => setSelected(memo)} onDialogue={(threadId) => void openThread(threadId)} />)}</div></section>}
                 {recentImportant.length > 0 && <section className="recent-group"><h2 className="recent-group-title">今の自分にとって結構重要な気づき</h2><div className="memo-list">{recentImportant.map((memo) => <MemoRow key={memo.id} memo={memo} onOpen={() => setSelected(memo)} onDialogue={(threadId) => void openThread(threadId)} />)}</div></section>}
                 {recentOther.length > 0 && <section className="recent-group"><h2 className="recent-group-title">その他のアイデア</h2><div className="memo-list">{recentOther.map((memo) => <MemoRow key={memo.id} memo={memo} onOpen={() => setSelected(memo)} onDialogue={(threadId) => void openThread(threadId)} />)}</div></section>}
-                {historicalMemos.length > 0 && <section className="recent-group"><h2 className="recent-group-title">以前、重要度をつけたメモ</h2><div className="memo-list">{historicalMemos.map((memo) => <MemoRow key={`historical-${memo.id}`} memo={memo} onOpen={() => setSelected(memo)} onDialogue={(threadId) => void openThread(threadId)} />)}</div></section>}
+                {storedMemos.length > 0 && <section className="recent-group"><h2>使うために取っておく</h2>
+                  <label>使い道 <select value={purposeFilter} onChange={e => setPurposeFilter(e.target.value)}><option value="">すべての使い道</option>{currentPurposes.map(p => <option key={p}>{p}</option>)}</select></label>
+                  <div className="memo-list">{storedMemos.filter(m => !purposeFilter || m.storage_purpose === purposeFilter).map(memo => <MemoRow key={memo.id} memo={memo} onOpen={() => setSelected(memo)} onDialogue={id => void openThread(id)} />)}</div>
+                </section>}
+                <details className="recent-group placement-history"><summary>以前の置き場所から探す</summary>
+                  {historyError && <p role="alert">履歴を読み込めませんでした。<button onClick={() => void refreshAttentionHistory()}>再読み込み</button></p>}
+                  <label>置き場所 <select value={historyLevel} onChange={e => { setHistoryLevel(e.target.value); setHistoryPurpose(""); }}><option value="">すべての置き場所</option>{(Object.keys(placementLabels) as AttentionLevel[]).map(level => <option key={level} value={level}>{placementLabels[level]}</option>)}</select></label>
+                  {(!historyLevel || historyLevel === "keep_for_use") && <label>使い道 <select value={historyPurpose} onChange={e => setHistoryPurpose(e.target.value)}><option value="">すべての使い道</option>{purposes.map(p => <option key={p}>{p}</option>)}</select></label>}
+                  <div className="memo-list">{historicalMemos.map(memo => <MemoRow key={memo.id} memo={memo} onOpen={() => setSelected(memo)} onDialogue={id => void openThread(id)} />)}</div>
+                  {!historicalMemos.length && !historyError && <p>該当する履歴はありません。</p>}
+                </details>
                 {allDoLaterMemos.length > 0 && <section className="recent-group"><h2 className="recent-group-title">あとでやる</h2><div className="memo-list">{allDoLaterMemos.map((memo) => <MemoRow key={memo.id} memo={memo} onOpen={() => setSelected(memo)} onDialogue={(threadId) => void openThread(threadId)} />)}</div></section>}
                 {recentSource.length === 0 && <p className="empty-message">ここに、残した言葉が並びます。</p>}
               </>
@@ -1329,7 +1373,9 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
           onClose={() => setSelected(null)}
           onDialogue={DIALOGUE_BETA ? () => void beginThread(selected.id) : undefined}
           onDoLater={!selected.deleted_at ? () => void markDoLater(selected) : undefined}
-          onAttention={!selected.deleted_at ? (level, repeatDaily) => void setAttentionForMemo(selected, level, repeatDaily) : undefined}
+          purposes={purposes}
+          placementHistory={attentionHistory.filter(item => item.memo_id === selected.id)}
+          onAttention={!selected.deleted_at ? (level, repeatDaily, purpose) => setAttentionForMemo(selected, level, repeatDaily, purpose) : undefined}
           onClearAttention={!selected.deleted_at && selected.attention_level ? () => void clearAttentionForMemo(selected) : undefined}
           onChanged={(kind, memo) => applyMemoMutation(kind, memo, selected)}
           onError={(message) => setNotice(message)}
@@ -1543,19 +1589,6 @@ const DoLaterFocusDialog = ({ item, onClose, onOpenMemo }: { item: DoLaterItem; 
   </div>
 );
 
-const AttentionChooser = ({ onSelect, onClose, initialRepeatDaily = false }: { onSelect: (level: AttentionLevel, repeatDaily?: boolean) => void; onClose: () => void; initialRepeatDaily?: boolean }) => (
-  <section className="reminder-chooser attention-chooser">
-    <div><strong>{"\u3053\u306e\u8a00\u8449\u3092\u3001\u3069\u3093\u306a\u3075\u3046\u306b\u6b8b\u3057\u3066\u304a\u304f\uff1f"}</strong><button aria-label="close" onClick={onClose}>x</button></div>
-    <p>{"\u65e5\u6642\u3067\u306f\u306a\u304f\u3001\u4eca\u306e\u81ea\u5206\u3068\u306e\u8ddd\u96e2\u611f\u3092\u9078\u3073\u307e\u3059\u3002"}</p>
-    <label className="repeat-daily-option"><input type="checkbox" id="repeat-daily-setting" defaultChecked={initialRepeatDaily} /> だいたい毎日</label>
-    <div className="attention-options">
-      <button onClick={() => onSelect("do_later", (document.getElementById("repeat-daily-setting") as HTMLInputElement)?.checked ?? false)}><strong>{"\u3042\u3068\u3067\u3084\u308b"}</strong><small>{"\u884c\u52d5\u306b\u3064\u306a\u304c\u308a\u305d\u3046"}</small></button>
-      <button onClick={() => onSelect("keep_in_mind", false)}><strong>{"\u3057\u3070\u3089\u304f\u898b\u3048\u308b\u3068\u3053\u308d\u306b\u7f6e\u3044\u3066\u304a\u304d\u305f\u3044"}</strong><small>{"\u4eca\u306e\u81ea\u5206\u306e\u4e2d\u306b\u7f6e\u3044\u3066\u304a\u304f"}</small></button>
-      <button onClick={() => onSelect("important_insight")}><strong>{"\u4eca\u306e\u81ea\u5206\u306b\u3068\u3063\u3066\u7d50\u69cb\u91cd\u8981\u306a\u6c17\u3065\u304d"}</strong><small>{"\u512a\u5148\u7684\u306b\u76ee\u306b\u5165\u308c\u308b"}</small></button>
-      <button onClick={() => onSelect("app_improvement", false)}><strong>言葉の保管庫の改善アイデア</strong><small>アプリをもっとよくするために残す</small></button>
-    </div>
-  </section>
-);
 const MemoryPreviewDialog = ({
   memory,
   onClose,
@@ -1643,7 +1676,9 @@ const MemoDialog = ({
   onDialogue,
   onDoLater,
   onAttention,
-  onClearAttention
+  onClearAttention,
+  purposes,
+  placementHistory
 }: {
   memo: Memo;
   onClose: () => void;
@@ -1651,7 +1686,9 @@ const MemoDialog = ({
   onError: (message: string) => void;
   onDialogue?: () => void;
   onDoLater?: () => void;
-  onAttention?: (level: AttentionLevel, repeatDaily?: boolean) => void;
+  onAttention?: (level: AttentionLevel, repeatDaily?: boolean, purpose?: string) => Promise<boolean>;
+  purposes: string[];
+  placementHistory: AttentionHistoryItem[];
   onClearAttention?: () => void;
 }) => {
   const [editing, setEditing] = useState(false);
@@ -1727,10 +1764,17 @@ const MemoDialog = ({
         )}
         {onAttention && !editing && (
           <>
-            <button className="do-later-dialog-button" onClick={() => setAttentionVisible((value) => !value)}>重要度を変える</button>
-            {attentionVisible && <AttentionChooser initialRepeatDaily={Boolean(memo.repeat_daily)} onSelect={(level, repeatDaily) => { setAttentionVisible(false); onAttention(level, repeatDaily); }} onClose={() => setAttentionVisible(false)} />}
+            <button className="do-later-dialog-button" onClick={() => setAttentionVisible((value) => !value)}>置き場所を変える</button>
+            {attentionVisible && <AttentionChooser purposes={purposes} initialPurpose={memo.storage_purpose ?? ""} initialRepeatDaily={Boolean(memo.repeat_daily)} onSelect={onAttention} onClose={() => setAttentionVisible(false)} />}
           </>
         )}
+        {memo.attention_level && <p className="placement-caption">{placementLabel(memo.attention_level, memo.storage_purpose)}</p>}
+        {placementHistory.length > 0 && <details className="placement-history"><summary>置き場所の履歴</summary>
+          {placementHistory.map(item => <div key={item.id}>
+            <p>{placementLabel(item.attention_level, item.storage_purpose)}</p>
+            <small>{formatDate(item.started_at)} ～ {item.ended_at ? formatDate(item.ended_at) : "現在"}</small>
+          </div>)}
+        </details>}
         {onClearAttention && !editing && (
           <button className="text-button attention-clear-button" onClick={onClearAttention}>普通のメモに戻す</button>
         )}

@@ -21,10 +21,11 @@ export interface CapturedMemo {
   revisions: MemoRevision[];
 }
 
-export type AttentionLevel = "do_later" | "keep_in_mind" | "important_insight" | "app_improvement";
+export type AttentionLevel = "do_later" | "keep_in_mind" | "important_insight" | "app_improvement" | "keep_for_use";
 export type DoLaterStatus = "active" | "done" | "abandoned";
 
 export interface DoLaterItem {
+  storage_purpose?: string | null;
   memo_id: string;
   status: DoLaterStatus;
   activated_at: string;
@@ -57,6 +58,7 @@ export interface DoLaterDeferral {
 }
 
 export interface AttentionHistoryItem {
+  storage_purpose?: string | null;
   id: string;
   memo_id: string;
   attention_level: AttentionLevel;
@@ -67,6 +69,7 @@ export interface AttentionHistoryItem {
 interface StoredDoLaterDeferral extends DoLaterDeferral {}
 
 interface StoredDoLaterItem {
+  storage_purpose?: string | null;
   memo_id: string;
   status: DoLaterStatus;
   activated_at: string;
@@ -133,6 +136,13 @@ export class CaptureStore {
   private doLaterDeferrals: StoredDoLaterDeferral[] = [];
   private searchInsights = new Map<string, SearchTerm>();
   private attentionHistory: AttentionHistoryItem[] = [];
+  private mutationTail: Promise<unknown> = Promise.resolve();
+
+  private mutate<T>(operation: () => Promise<T>): Promise<T> {
+    const pending = this.mutationTail.then(operation);
+    this.mutationTail = pending.catch(() => undefined);
+    return pending;
+  }
 
   constructor(
     private readonly filePath: string,
@@ -212,6 +222,7 @@ export class CaptureStore {
   }
 
   async capture(id: string, text: string, capturedAt: string): Promise<CapturedMemo> {
+    return this.mutate(async () => {
     const existing = this.memos.get(id);
     if (existing) return existing;
     const memo: CapturedMemo = {
@@ -228,6 +239,7 @@ export class CaptureStore {
     await this.persist();
     await this.index(memo);
     return memo;
+    });
   }
 
   list(deleted = false): CapturedMemo[] {
@@ -236,7 +248,8 @@ export class CaptureStore {
       .map((item) => [item.memo_id, item.attention_level]));
     return [...this.memos.values()]
       .filter((memo) => deleted ? Boolean(memo.deleted_at) : !memo.deleted_at)
-      .map((memo) => ({ ...memo, attention_level: activeAttention.get(memo.id) ?? null }))
+      .map((memo) => ({ ...memo, attention_level: activeAttention.get(memo.id) ?? null,
+        storage_purpose: activeAttention.get(memo.id) === "keep_for_use" ? this.doLater.get(memo.id)?.storage_purpose ?? null : null }))
       .sort((left, right) => right.captured_at.localeCompare(left.captured_at));
   }
 
@@ -245,6 +258,7 @@ export class CaptureStore {
   }
 
   async update(id: string, text: string, title?: string): Promise<CapturedMemo | null> {
+    return this.mutate(async () => {
     const memo = this.memos.get(id);
     if (!memo || memo.deleted_at) return null;
     memo.revisions.push({
@@ -258,9 +272,11 @@ export class CaptureStore {
     await this.persist();
     await this.index(memo);
     return memo;
+    });
   }
 
   async trash(id: string): Promise<boolean> {
+    return this.mutate(async () => {
     const memo = this.memos.get(id);
     if (!memo || memo.deleted_at) return false;
     memo.deleted_at = new Date().toISOString();
@@ -268,9 +284,11 @@ export class CaptureStore {
     await this.persist();
     await this.runtime.repository.deleteBySourceUris([`memory://memo/${id}`]);
     return true;
+    });
   }
 
   async restore(id: string): Promise<CapturedMemo | null> {
+    return this.mutate(async () => {
     const memo = this.memos.get(id);
     if (!memo || !memo.deleted_at) return null;
     memo.deleted_at = null;
@@ -278,6 +296,7 @@ export class CaptureStore {
     await this.persist();
     await this.index(memo);
     return memo;
+    });
   }
 
   listDoLater(view: "active" | "resolved"): DoLaterItem[] {
@@ -290,7 +309,7 @@ export class CaptureStore {
       .sort((left, right) => {
         if (view === "active") {
           if (left.repeat_daily !== right.repeat_daily) return left.repeat_daily ? -1 : 1;
-          const rank = { do_later: 1, keep_in_mind: 2, important_insight: 3, app_improvement: 4 } as const;
+          const rank = { do_later: 1, keep_in_mind: 2, important_insight: 3, app_improvement: 4, keep_for_use: 5 } as const;
           const leftRank = rank[left.attention_level] ?? 1;
           const rightRank = rank[right.attention_level] ?? 1;
           if (leftRank !== rightRank) return rightRank - leftRank;
@@ -344,16 +363,24 @@ export class CaptureStore {
     return [...this.doLaterDeferrals].sort((left, right) => left.deferred_at.localeCompare(right.deferred_at));
   }
 
-  async addDoLater(id: string, attentionLevelOrNow: AttentionLevel | string = "do_later", now = new Date().toISOString(), repeatDaily?: boolean): Promise<DoLaterItem | null> {
+  addDoLater(id: string, level: AttentionLevel | string = "do_later", now = new Date().toISOString(), repeatDaily?: boolean, purpose?: string): Promise<DoLaterItem | null> {
+    return this.mutate(() => this.addDoLaterUnqueued(id, level, now, repeatDaily, purpose));
+  }
+
+  private async addDoLaterUnqueued(id: string, attentionLevelOrNow: AttentionLevel | string = "do_later", now = new Date().toISOString(), repeatDaily?: boolean, storagePurpose?: string): Promise<DoLaterItem | null> {
     const legacyTimestamp = attentionLevelOrNow.includes("T");
     const attentionLevel: AttentionLevel = legacyTimestamp ? "do_later" : attentionLevelOrNow as AttentionLevel;
     if (legacyTimestamp) now = attentionLevelOrNow;
     const memo = this.memos.get(id);
     if (!memo || memo.deleted_at) return null;
     const previous = this.doLater.get(id);
-    if (!previous || previous.attention_level !== attentionLevel) {
+    const purpose = attentionLevel === "keep_for_use" ? storagePurpose?.trim() ?? "" : null;
+    if (purpose !== null && (purpose.length < 1 || purpose.length > 100)) throw new Error("invalid_storage_purpose");
+    const historyBefore = this.attentionHistory.map((item) => ({ ...item }));
+    const unchanged = previous?.status === "active" && previous.attention_level === attentionLevel && (previous.storage_purpose ?? null) === purpose;
+    if (!unchanged) {
       this.closeAttentionHistory(id, now);
-      this.attentionHistory.push({ id: crypto.randomUUID(), memo_id: id, attention_level: attentionLevel, started_at: now, ended_at: null });
+      this.attentionHistory.push({ id: crypto.randomUUID(), memo_id: id, attention_level: attentionLevel, storage_purpose: purpose, started_at: now, ended_at: null });
     }
     const item: StoredDoLaterItem = {
       ...(previous ?? {
@@ -369,32 +396,40 @@ export class CaptureStore {
       }),
       memo_id: id,
       status: "active",
-      activated_at: now,
+      activated_at: unchanged && attentionLevel !== "do_later" ? previous.activated_at : now,
       deferred_at: null,
       bottom_order: null,
       manual_order: null,
       attention_level: attentionLevel,
-      heavy_marked: false,
+      storage_purpose: purpose,
+      heavy_marked: unchanged ? previous.heavy_marked : false,
       updated_at: now,
       resolved_at: null
     };
+    if (unchanged && attentionLevel !== "do_later") {
+      item.manual_order = previous.manual_order;
+      item.bottom_order = previous.bottom_order;
+      item.deferred_at = previous.deferred_at;
+    }
     if (repeatDaily !== undefined) item.repeat_daily = repeatDaily;
-    if (!item.repeat_daily) item.repeat_next_on = null;
+    if (attentionLevel !== "do_later") item.repeat_daily = false;
+    if (!item.repeat_daily || !unchanged) item.repeat_next_on = null;
     this.doLater.set(id, item);
-    await this.persist();
+    try { await this.persist(); } catch (error) {
+      if (previous) this.doLater.set(id, previous); else this.doLater.delete(id);
+      this.attentionHistory = historyBefore;
+      throw error;
+    }
     return { ...item, memo };
   }
 
-  async updateAttentionLevel(id: string, attentionLevel: AttentionLevel, now = new Date().toISOString()): Promise<DoLaterItem | null> {
+  async updateAttentionLevel(id: string, attentionLevel: AttentionLevel, now = new Date().toISOString(), storagePurpose?: string): Promise<DoLaterItem | null> {
+    return this.mutate(async () => {
     const memo = this.memos.get(id);
     const current = this.doLater.get(id);
     if (!memo || memo.deleted_at || !current || current.status !== "active") return null;
-    this.closeAttentionHistory(id, now);
-    this.attentionHistory.push({ id: crypto.randomUUID(), memo_id: id, attention_level: attentionLevel, started_at: now, ended_at: null });
-    const item: StoredDoLaterItem = { ...current, attention_level: attentionLevel, updated_at: now };
-    this.doLater.set(id, item);
-    await this.persist();
-    return { ...item, memo };
+    return this.addDoLaterUnqueued(id, attentionLevel, now, undefined, storagePurpose);
+    });
   }
 
   private closeAttentionHistory(memoId: string, endedAt: string): void {
@@ -402,17 +437,36 @@ export class CaptureStore {
   }
 
   listAttentionHistory(): AttentionHistoryItem[] {
-    return [...this.attentionHistory].sort((left, right) => right.started_at.localeCompare(left.started_at));
+    return this.attentionHistory.filter((item) => {
+      const memo = this.memos.get(item.memo_id);
+      return memo && !memo.deleted_at;
+    }).map(item => ({ ...item })).sort((left, right) => right.started_at.localeCompare(left.started_at) || right.id.localeCompare(left.id));
+  }
+
+  listAttentionHistoryPage(cursor: string | null = null) {
+    const [timestamp, id] = cursor ? JSON.parse(cursor) as [string, string] : ["", ""];
+    const remaining = this.listAttentionHistory().filter((item) => !cursor || item.started_at < timestamp || (item.started_at === timestamp && item.id < id));
+    const memos = new Map(this.list().map((memo) => [memo.id, memo]));
+    const items = remaining.slice(0, 100).map((item) => ({ ...item, memo: memos.get(item.memo_id)! }));
+    const last = items.at(-1);
+    return { items, next_cursor: remaining.length > 100 && last ? JSON.stringify([last.started_at, last.id]) : null };
   }
 
   async clearAttentionLevel(id: string, now = new Date().toISOString()): Promise<boolean> {
+    return this.mutate(async () => {
     const current = this.doLater.get(id);
     const memo = this.memos.get(id);
     if (!current || !memo || memo.deleted_at) return false;
+    const historyBefore = this.attentionHistory.map((item) => ({ ...item }));
     this.closeAttentionHistory(id, now);
     this.doLater.delete(id);
-    await this.persist();
+    try { await this.persist(); } catch (error) {
+      this.doLater.set(id, current);
+      this.attentionHistory = historyBefore;
+      throw error;
+    }
     return true;
+    });
   }
 
   async updateDoLater(
@@ -421,6 +475,7 @@ export class CaptureStore {
     optionsOrNow?: { reason?: string; heavy_marked?: boolean } | string,
     now = typeof optionsOrNow === "string" ? optionsOrNow : new Date().toISOString()
   ): Promise<DoLaterItem | null> {
+    return this.mutate(async () => {
     const memo = this.memos.get(id);
     const current = this.doLater.get(id);
     if (!memo || memo.deleted_at || !current) return null;
@@ -457,9 +512,11 @@ export class CaptureStore {
     }
     await this.persist();
     return { ...item, memo };
+    });
   }
 
   async reorderDoLater(ids: string[], now = new Date().toISOString()): Promise<DoLaterItem[] | null> {
+    return this.mutate(async () => {
     const active = [...this.doLater.values()].filter((item) => {
       const memo = this.memos.get(item.memo_id);
       return item.status === "active"
@@ -475,6 +532,7 @@ export class CaptureStore {
     });
     await this.persist();
     return this.listDoLater("active");
+    });
   }
 
   async configureDoLater(
@@ -482,6 +540,7 @@ export class CaptureStore {
     configuration: DoLaterConfiguration,
     now = new Date().toISOString()
   ): Promise<DoLaterItem | null> {
+    return this.mutate(async () => {
     const memo = this.memos.get(id);
     const current = this.doLater.get(id);
     if (!memo || memo.deleted_at || !current) return null;
@@ -489,6 +548,7 @@ export class CaptureStore {
     this.doLater.set(id, item);
     await this.persist();
     return { ...item, memo };
+    });
   }
 
 listSearchInsights(): SearchInsights {
@@ -500,6 +560,7 @@ listSearchInsights(): SearchInsights {
   }
 
   async recordSearch(query: string, now = new Date().toISOString()): Promise<SearchInsights> {
+    return this.mutate(async () => {
     const text = query.normalize("NFKC").replace(/\s+/gu, " ").trim().toLocaleLowerCase("ja-JP");
     if (!text) return this.listSearchInsights();
     const previous = this.searchInsights.get(text);
@@ -510,5 +571,6 @@ listSearchInsights(): SearchInsights {
     });
     await this.persist();
     return this.listSearchInsights();
+    });
   }
 }
