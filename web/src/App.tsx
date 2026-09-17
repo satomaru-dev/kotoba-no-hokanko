@@ -38,6 +38,7 @@ import {
   unlinkWorkspace,
   updateDoLater,
   updateDoLaterAttention,
+  updateStorageArchived,
   reorderDoLater,
   updateMemo
 } from "./api";
@@ -826,6 +827,17 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
     }
   };
 
+  const setStorageArchivedForMemo = async (memo: Memo, archived: boolean) => {
+    try {
+      const item = await updateStorageArchived(memo.id, archived);
+      setSelected((current) => current?.id === memo.id ? { ...current, storage_archived: item.storage_archived } : current);
+      await Promise.all([refreshMemos(), refreshHomeMemos()]);
+      setNotice(archived ? "いったん保管済みにしました。" : "保管中に戻しました。");
+    } catch {
+      setNotice("保管状態を変更できませんでした。メモは変わっていません。");
+    }
+  };
+
   const askAboutLater = (memoId: string) => {
     setPendingLaterId(memoId);
   };
@@ -1019,6 +1031,8 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
   const recentOther = recentSource.filter((memo) => memo.attention_level !== "keep_in_mind" && memo.attention_level !== "important_insight" && memo.attention_level !== "app_improvement" && memo.attention_level !== "do_later" && memo.attention_level !== "keep_for_use");
   const purposes = storagePurposes(recentSource, attentionHistory);
   const storedMemos = recentSource.filter(m => m.attention_level === "keep_for_use");
+  const storedActiveMemos = storedMemos.filter(m => !m.storage_archived);
+  const storedArchivedMemos = storedMemos.filter(m => m.storage_archived);
   const currentPurposes = storagePurposes(storedMemos, []);
   const historicalMemos = historicalPlacementMemos(attentionHistory, recentSource, historyLevel, historyPurpose);
   const homeImportant = homeMemos.find((memo) => memo.id === importantId) ?? null;
@@ -1334,7 +1348,14 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
                 {recentImportant.length > 0 && <section className="recent-group"><h2 className="recent-group-title">今の自分にとって結構重要な気づき</h2><div className="memo-list">{recentImportant.map((memo) => <MemoRow key={memo.id} memo={memo} onOpen={() => setSelected(memo)} onDialogue={(threadId) => void openThread(threadId)} />)}</div></section>}
                 {storedMemos.length > 0 && <section className="recent-group"><h2>使うために取っておく</h2>
                   <label>使い道 <select value={purposeFilter} onChange={e => setPurposeFilter(e.target.value)}><option value="">すべての使い道</option>{currentPurposes.map(p => <option key={p}>{p}</option>)}</select></label>
-                  <div className="memo-list">{storedMemos.filter(m => !purposeFilter || m.storage_purpose === purposeFilter).map(memo => <MemoRow key={memo.id} memo={memo} onOpen={() => setSelected(memo)} onDialogue={id => void openThread(id)} />)}</div>
+                  {storedActiveMemos.filter(m => !purposeFilter || m.storage_purpose === purposeFilter).length > 0 && <>
+                    <h3 className="stored-subtitle">保管中</h3>
+                    <div className="memo-list">{storedActiveMemos.filter(m => !purposeFilter || m.storage_purpose === purposeFilter).map(memo => <MemoRow key={memo.id} memo={memo} onOpen={() => setSelected(memo)} onDialogue={id => void openThread(id)} />)}</div>
+                  </>}
+                  {storedArchivedMemos.filter(m => !purposeFilter || m.storage_purpose === purposeFilter).length > 0 && <details className="stored-archive">
+                    <summary>いったん保管済み（{storedArchivedMemos.filter(m => !purposeFilter || m.storage_purpose === purposeFilter).length}件）</summary>
+                    <div className="memo-list">{storedArchivedMemos.filter(m => !purposeFilter || m.storage_purpose === purposeFilter).map(memo => <MemoRow key={memo.id} memo={memo} onOpen={() => setSelected(memo)} onDialogue={id => void openThread(id)} />)}</div>
+                  </details>}
                 </section>}
                 {recentOther.length > 0 && <section className="recent-group"><h2 className="recent-group-title">その他のアイデア</h2><div className="memo-list">{recentOther.map((memo) => <MemoRow key={memo.id} memo={memo} onOpen={() => setSelected(memo)} onDialogue={(threadId) => void openThread(threadId)} />)}</div></section>}
                 <details className="recent-group placement-history"><summary>以前の置き場所から探す</summary>
@@ -1377,6 +1398,7 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
           placementHistory={attentionHistory.filter(item => item.memo_id === selected.id)}
           onAttention={!selected.deleted_at ? (level, repeatDaily, purpose) => setAttentionForMemo(selected, level, repeatDaily, purpose) : undefined}
           onClearAttention={!selected.deleted_at && selected.attention_level ? () => void clearAttentionForMemo(selected) : undefined}
+          onStorageArchived={!selected.deleted_at && selected.attention_level === "keep_for_use" ? (archived) => void setStorageArchivedForMemo(selected, archived) : undefined}
           onChanged={(kind, memo) => applyMemoMutation(kind, memo, selected)}
           onError={(message) => setNotice(message)}
         />
@@ -1677,6 +1699,7 @@ const MemoDialog = ({
   onDoLater,
   onAttention,
   onClearAttention,
+  onStorageArchived,
   purposes,
   placementHistory
 }: {
@@ -1690,6 +1713,7 @@ const MemoDialog = ({
   purposes: string[];
   placementHistory: AttentionHistoryItem[];
   onClearAttention?: () => void;
+  onStorageArchived?: (archived: boolean) => void;
 }) => {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(memo.current_text);
@@ -1775,6 +1799,11 @@ const MemoDialog = ({
             <small>{formatDate(item.started_at)} ～ {item.ended_at ? formatDate(item.ended_at) : "現在"}</small>
           </div>)}
         </details>}
+        {onStorageArchived && !editing && (
+          <button className="text-button storage-archive-button" onClick={() => onStorageArchived(!memo.storage_archived)}>
+            {memo.storage_archived ? "保管中に戻す" : "いったん保管済みにする"}
+          </button>
+        )}
         {onClearAttention && !editing && (
           <button className="text-button attention-clear-button" onClick={onClearAttention}>普通のメモに戻す</button>
         )}

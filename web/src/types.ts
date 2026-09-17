@@ -27,6 +27,7 @@ export interface MemoRevision {
 
 export interface Memo {
   storage_purpose?: string | null;
+  storage_archived?: boolean;
   id: string;
   original_text: string;
   current_text: string;
@@ -112,6 +113,7 @@ export type DoLaterAction = "done" | "later" | "abandon";
 
 export interface DoLaterItem {
   storage_purpose?: string | null;
+  storage_archived?: boolean;
   memo_id: string;
   status: DoLaterStatus;
   activated_at: string;

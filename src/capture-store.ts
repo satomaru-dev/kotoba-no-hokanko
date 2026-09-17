@@ -26,6 +26,7 @@ export type DoLaterStatus = "active" | "done" | "abandoned";
 
 export interface DoLaterItem {
   storage_purpose?: string | null;
+  storage_archived?: boolean;
   memo_id: string;
   status: DoLaterStatus;
   activated_at: string;
@@ -70,6 +71,7 @@ interface StoredDoLaterDeferral extends DoLaterDeferral {}
 
 interface StoredDoLaterItem {
   storage_purpose?: string | null;
+  storage_archived?: boolean;
   memo_id: string;
   status: DoLaterStatus;
   activated_at: string;
@@ -164,6 +166,7 @@ export class CaptureStore {
         bottom_order: null,
         manual_order: null,
         attention_level: "do_later",
+        storage_archived: false,
         heavy_marked: false,
         first_step: null,
         launch_url: null,
@@ -245,11 +248,12 @@ export class CaptureStore {
   list(deleted = false): CapturedMemo[] {
     const activeAttention = new Map([...this.doLater.values()]
       .filter((item) => item.status === "active")
-      .map((item) => [item.memo_id, item.attention_level]));
+      .map((item) => [item.memo_id, item]));
     return [...this.memos.values()]
       .filter((memo) => deleted ? Boolean(memo.deleted_at) : !memo.deleted_at)
-      .map((memo) => ({ ...memo, attention_level: activeAttention.get(memo.id) ?? null,
-        storage_purpose: activeAttention.get(memo.id) === "keep_for_use" ? this.doLater.get(memo.id)?.storage_purpose ?? null : null }))
+      .map((memo) => ({ ...memo, attention_level: activeAttention.get(memo.id)?.attention_level ?? null,
+        storage_purpose: activeAttention.get(memo.id)?.attention_level === "keep_for_use" ? activeAttention.get(memo.id)?.storage_purpose ?? null : null,
+        storage_archived: activeAttention.get(memo.id)?.attention_level === "keep_for_use" ? Boolean(activeAttention.get(memo.id)?.storage_archived) : false }))
       .sort((left, right) => right.captured_at.localeCompare(left.captured_at));
   }
 
@@ -388,6 +392,7 @@ export class CaptureStore {
         bottom_order: null,
         manual_order: null,
         attention_level: "do_later",
+        storage_archived: false,
         first_step: null,
         launch_url: null,
         roulette_enabled: false,
@@ -402,6 +407,7 @@ export class CaptureStore {
       manual_order: null,
       attention_level: attentionLevel,
       storage_purpose: purpose,
+      storage_archived: false,
       heavy_marked: unchanged ? previous.heavy_marked : false,
       updated_at: now,
       resolved_at: null
@@ -548,6 +554,22 @@ export class CaptureStore {
     this.doLater.set(id, item);
     await this.persist();
     return { ...item, memo };
+    });
+  }
+
+  async updateStorageArchived(id: string, archived: boolean, now = new Date().toISOString()): Promise<DoLaterItem | null> {
+    return this.mutate(async () => {
+      const memo = this.memos.get(id);
+      const current = this.doLater.get(id);
+      if (!memo || memo.deleted_at || !current || current.status !== "active" || current.attention_level !== "keep_for_use") return null;
+      const previous = { ...current };
+      const item: StoredDoLaterItem = { ...current, storage_archived: archived, updated_at: now };
+      this.doLater.set(id, item);
+      try { await this.persist(); } catch (error) {
+        this.doLater.set(id, previous);
+        throw error;
+      }
+      return { ...item, memo };
     });
   }
 

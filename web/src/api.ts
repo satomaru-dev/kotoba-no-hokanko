@@ -261,6 +261,14 @@ export const configureDoLater = async (
   return result.item;
 };
 
+export const updateStorageArchived = async (memoId: string, archived: boolean): Promise<DoLaterItem> => {
+  const result = await request<{ item: DoLaterItem }>(`/memos/${memoId}/do-later`, {
+    method: "PATCH",
+    body: JSON.stringify({ purpose_archived: archived })
+  });
+  return result.item;
+};
+
 const localOnly = (): void => {
   if (cloudMode) throw new Error("workspace_feature_is_local_only");
 };

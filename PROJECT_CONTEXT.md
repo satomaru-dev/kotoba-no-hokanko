@@ -150,6 +150,7 @@
 ### あとでやる・置き場所
 
 - `attention_level`は`do_later | keep_in_mind | important_insight | app_improvement | keep_for_use`。`keep_for_use`には暗号化した`storage_purpose`を1つ持たせる。
+- `keep_for_use`は「保管中」と「いったん保管済み」を同じ使い道の中で分けて扱える。保管済みは一覧で折りたたみ、削除や普通のメモへの変更をせず、詳細から保管中へ戻せる。
 - `status`は`active | done | abandoned`。
 - 新規／再登録した`do_later`項目は先頭へ入り、手動順を保持する。
 - `まだやらない`は自由記入理由の保存成功後に対象を現在の一覧から取り除き、配列末尾へ追加する。保存後も同じ順番を維持する。

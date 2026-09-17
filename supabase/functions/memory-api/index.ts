@@ -390,6 +390,7 @@ const loadDoLaterItems = async (
       manual_order: item.manual_order ?? null,
       attention_level: item.attention_level ?? "do_later",
       storage_purpose: item.storage_purpose_ciphertext ? await decrypt(item.storage_purpose_ciphertext) : null,
+      storage_archived: Boolean(item.storage_archived),
       heavy_marked: Boolean(item.heavy_marked),
       updated_at: item.updated_at,
       resolved_at: item.resolved_at,
@@ -481,6 +482,11 @@ const setPlacement = async (admin: AdminClient, ownerId: string, memoId: string,
     p_repeat_daily: body.repeat_daily ?? null, p_require_active: requireActive
   });
   if (error) throw error;
+  if (level !== null) {
+    const { error: stateError } = await admin.from("memo_later_items")
+      .update({ storage_archived: false }).eq("memo_id", memoId).eq("owner_id", ownerId);
+    if (stateError) throw stateError;
+  }
   return json({ item: level === null ? null : await loadDoLaterItem(admin, ownerId, memoId) }, requireActive ? 200 : 201);
 };
 
@@ -1031,7 +1037,7 @@ if (route === "/search" && request.method === "POST") {
       const activeIds = rows.map((row) => row.id);
       const { data: attentionRows, error: attentionError } = activeIds.length === 0
         ? { data: [], error: null }
-        : await admin.from("memo_later_items").select("memo_id,attention_level,storage_purpose_ciphertext,repeat_daily,repeat_next_on")
+        : await admin.from("memo_later_items").select("memo_id,attention_level,storage_purpose_ciphertext,storage_archived,repeat_daily,repeat_next_on")
           .eq("owner_id", ownerId).eq("status", "active").in("memo_id", activeIds);
       if (attentionError) throw attentionError;
       const attention = new Map((attentionRows ?? []).map((row) => [row.memo_id, row]));
@@ -1045,6 +1051,7 @@ if (route === "/search" && request.method === "POST") {
           ...memo,
           attention_level: attention.get(memo.id)?.attention_level ?? null,
           storage_purpose: attention.get(memo.id)?.storage_purpose_ciphertext ? await decrypt(attention.get(memo.id)!.storage_purpose_ciphertext) : null,
+          storage_archived: Boolean(attention.get(memo.id)?.storage_archived),
           repeat_daily: Boolean(attention.get(memo.id)?.repeat_daily),
           repeat_next_on: attention.get(memo.id)?.repeat_next_on ?? null,
           ...dialogue[index]
@@ -1090,7 +1097,7 @@ if (route === "/search" && request.method === "POST") {
       }
       if (request.method === "PATCH") {
         const { data: current, error: currentError } = await admin.from("memo_later_items")
-          .select("memo_id,activated_at,deferred_at,bottom_order,manual_order,attention_level,heavy_marked,repeat_daily,repeat_next_on").eq("memo_id", memoId).eq("owner_id", ownerId).maybeSingle();
+          .select("memo_id,activated_at,deferred_at,bottom_order,manual_order,attention_level,storage_archived,heavy_marked,repeat_daily,repeat_next_on").eq("memo_id", memoId).eq("owner_id", ownerId).maybeSingle();
         if (currentError) throw currentError;
         if (!current) return json({ error: "not_found" }, 404);
         const body = await request.json();
@@ -1118,6 +1125,14 @@ if (route === "/search" && request.method === "POST") {
         }
         if (body.attention_level !== undefined) {
           return await setPlacement(admin, ownerId, memoId, body, true);
+        }
+        if (body.purpose_archived !== undefined) {
+          if (typeof body.purpose_archived !== "boolean" || current.attention_level !== "keep_for_use") return json({ error: "invalid_request" }, 400);
+          const { error } = await admin.from("memo_later_items")
+            .update({ storage_archived: body.purpose_archived, updated_at: now })
+            .eq("memo_id", memoId).eq("owner_id", ownerId).eq("attention_level", "keep_for_use").eq("status", "active");
+          if (error) throw error;
+          return json({ item: await loadDoLaterItem(admin, ownerId, memoId) });
         }
         if (body.configuration !== undefined) {
           const configuration = body.configuration as Record<string, unknown>;

@@ -71,6 +71,20 @@ describe("capture store", () => {
     rename.mockRestore();
   });
 
+  it("keeps stored-purpose memos when they are marked archived and restores them", async () => {
+    const { store } = await makeStore();
+    await store.capture("stored", "使い終わったアイデア", "2026-09-01T00:00:00.000Z");
+    await store.addDoLater("stored", "keep_for_use", undefined, false, "旅行");
+    expect(store.list()[0]).toMatchObject({ attention_level: "keep_for_use", storage_purpose: "旅行", storage_archived: false });
+
+    await store.updateStorageArchived("stored", true);
+    expect(store.list()[0]).toMatchObject({ attention_level: "keep_for_use", storage_purpose: "旅行", storage_archived: true });
+    expect(store.listDoLater("active")[0]).toMatchObject({ memo_id: "stored", storage_archived: true });
+
+    await store.updateStorageArchived("stored", false);
+    expect(store.list()[0]).toMatchObject({ attention_level: "keep_for_use", storage_purpose: "旅行", storage_archived: false });
+  });
+
   it("pages over 100 history periods with tied dates without omissions", async () => {
     const { store } = await makeStore();
     await store.capture("purpose", "本文", "2026-09-01T00:00:00.000Z");

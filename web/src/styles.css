@@ -356,3 +356,7 @@ button:disabled { cursor: default; }
 .placement-history summary { cursor: pointer; padding: 12px 0; }
 .placement-history label { display: block; margin: 12px 0; }
 .placement-history p { overflow-wrap: anywhere; }
+.stored-subtitle { margin: 16px 0 8px; font-size: 0.95rem; font-weight: 600; }
+.stored-archive { margin-top: 16px; }
+.stored-archive summary { cursor: pointer; padding: 12px 0; }
+.storage-archive-button { margin-top: 12px; }

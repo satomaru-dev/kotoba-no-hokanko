@@ -184,15 +184,17 @@ app.patch("/api/memos/:id/do-later", async (request: Request, response: Response
 
 app.patch("/api/memos/:id/do-later", async (request: Request, response: Response, next: NextFunction) => {
   try {
-    const body = request.body as { action?: string; configuration?: unknown; attention_level?: string | null; reason?: string; storage_purpose?: string };
+    const body = request.body as { action?: string; configuration?: unknown; attention_level?: string | null; reason?: string; storage_purpose?: string; purpose_archived?: boolean };
     const id = String(request.params.id ?? "");
-    const actionInput = body.attention_level === undefined && body.configuration === undefined
+    const actionInput = body.attention_level === undefined && body.configuration === undefined && body.purpose_archived === undefined
       ? z.object({
           action: z.enum(["done", "later", "abandon"]),
           reason: z.string().max(1000).optional()
         }).parse(body)
       : null;
-    const item = body.attention_level === null
+    const item = body.purpose_archived !== undefined
+      ? await captures.updateStorageArchived(id, z.boolean().parse(body.purpose_archived))
+      : body.attention_level === null
       ? (await captures.clearAttentionLevel(id) ? null : null)
       : body.attention_level !== undefined
       ? await captures.updateAttentionLevel(id, z.enum(["do_later", "keep_in_mind", "important_insight", "app_improvement", "keep_for_use"]).parse(body.attention_level), new Date().toISOString(), body.attention_level === "keep_for_use" ? z.string().trim().min(1).max(100).parse(body.storage_purpose) : undefined)
