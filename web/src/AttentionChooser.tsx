@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import { placementLabels } from "./placement";
+import { placementLabels, selectablePlacementLevels } from "./placement";
 import type { AttentionLevel } from "./types";
 
 export const AttentionChooser = ({ onSelect, onClose, initialRepeatDaily = false, initialPurpose = "", purposes = [] }: {
@@ -38,7 +38,7 @@ export const AttentionChooser = ({ onSelect, onClose, initialRepeatDaily = false
       </> : <>
         <label className="repeat-daily-option"><input type="checkbox" checked={repeat} onChange={e => setRepeat(e.target.checked)} /> だいたい毎日（あとでやる）</label>
         <div className="attention-options">
-          {(Object.keys(placementLabels) as AttentionLevel[]).map(level =>
+          {selectablePlacementLevels.map(level =>
             <button type="button" key={level} onClick={() => level === "keep_for_use" ? setPurposeVisible(true) : void save(level)}>
               <strong>{level === "keep_for_use" ? "〇〇に使うから取っておく" : placementLabels[level]}</strong>
               {level === "keep_in_mind" && <small>ホワイトボードのように、今、目に入るところへ</small>}

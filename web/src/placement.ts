@@ -8,6 +8,14 @@ export const placementLabels: Record<AttentionLevel, string> = {
   keep_for_use: "使うために取っておく"
 };
 
+// app_improvement is kept here only so legacy memos and their history remain readable.
+export const selectablePlacementLevels: AttentionLevel[] = [
+  "do_later",
+  "keep_in_mind",
+  "important_insight",
+  "keep_for_use"
+];
+
 export const placementLabel = (level: AttentionLevel, purpose?: string | null): string =>
   level === "keep_for_use" && purpose ? `${purpose}に使うから取っておく` : placementLabels[level];
 

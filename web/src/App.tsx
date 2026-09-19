@@ -52,7 +52,7 @@ import {
   removeQueuedReminder
 } from "./offline";
 import { AttentionChooser } from "./AttentionChooser";
-import { historicalPlacementMemos, placementLabel, placementLabels, storagePurposes } from "./placement";
+import { historicalPlacementMemos, placementLabel, placementLabels, selectablePlacementLevels, storagePurposes } from "./placement";
 import { deferralsToCsv, jstDateForFilename } from "./do-later-export";
 import { chooseImportantMemo, readHomeMode, readRotation, writeHomeMode, writeRotation, type HomeMode } from "./home-rediscovery";
 import { mergeMemo, prependMemo, removeDoLaterMemo, removeMemo, replaceDoLaterMemo, replaceMemo } from "./memo-state";
@@ -1027,8 +1027,7 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
   const allDoLaterMemos = recentSource.filter((memo) => memo.attention_level === "do_later");
   const recentKeepInMind = recentSource.filter((memo) => memo.attention_level === "keep_in_mind");
   const recentImportant = recentSource.filter((memo) => memo.attention_level === "important_insight");
-  const recentAppImprovement = recentSource.filter((memo) => memo.attention_level === "app_improvement");
-  const recentOther = recentSource.filter((memo) => memo.attention_level !== "keep_in_mind" && memo.attention_level !== "important_insight" && memo.attention_level !== "app_improvement" && memo.attention_level !== "do_later" && memo.attention_level !== "keep_for_use");
+  const recentOther = recentSource.filter((memo) => memo.attention_level !== "keep_in_mind" && memo.attention_level !== "important_insight" && memo.attention_level !== "do_later" && memo.attention_level !== "keep_for_use");
   const purposes = storagePurposes(recentSource, attentionHistory);
   const storedMemos = recentSource.filter(m => m.attention_level === "keep_for_use");
   const storedActiveMemos = storedMemos.filter(m => !m.storage_archived);
@@ -1343,7 +1342,6 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
               </div>
             ) : (
               <>
-                {recentAppImprovement.length > 0 && <section className="recent-group"><h2 className="recent-group-title">言葉の保管庫の改善アイデア</h2><div className="memo-list">{recentAppImprovement.map((memo) => <MemoRow key={memo.id} memo={memo} onOpen={() => setSelected(memo)} onDialogue={(threadId) => void openThread(threadId)} />)}</div></section>}
                 {recentKeepInMind.length > 0 && <section className="recent-group"><h2 className="recent-group-title">しばらく見えるところに置いておきたい</h2><div className="memo-list">{recentKeepInMind.map((memo) => <MemoRow key={memo.id} memo={memo} onOpen={() => setSelected(memo)} onDialogue={(threadId) => void openThread(threadId)} />)}</div></section>}
                 {recentImportant.length > 0 && <section className="recent-group"><h2 className="recent-group-title">今の自分にとって結構重要な気づき</h2><div className="memo-list">{recentImportant.map((memo) => <MemoRow key={memo.id} memo={memo} onOpen={() => setSelected(memo)} onDialogue={(threadId) => void openThread(threadId)} />)}</div></section>}
                 {storedMemos.length > 0 && <section className="recent-group"><h2>使うために取っておく</h2>
@@ -1360,7 +1358,7 @@ export const App = ({ onPasswordSettings }: { onPasswordSettings?: () => void })
                 {recentOther.length > 0 && <section className="recent-group"><h2 className="recent-group-title">その他のアイデア</h2><div className="memo-list">{recentOther.map((memo) => <MemoRow key={memo.id} memo={memo} onOpen={() => setSelected(memo)} onDialogue={(threadId) => void openThread(threadId)} />)}</div></section>}
                 <details className="recent-group placement-history"><summary>以前の置き場所から探す</summary>
                   {historyError && <p role="alert">履歴を読み込めませんでした。<button onClick={() => void refreshAttentionHistory()}>再読み込み</button></p>}
-                  <label>置き場所 <select value={historyLevel} onChange={e => { setHistoryLevel(e.target.value); setHistoryPurpose(""); }}><option value="">すべての置き場所</option>{(Object.keys(placementLabels) as AttentionLevel[]).map(level => <option key={level} value={level}>{placementLabels[level]}</option>)}</select></label>
+                  <label>置き場所 <select value={historyLevel} onChange={e => { setHistoryLevel(e.target.value); setHistoryPurpose(""); }}><option value="">すべての置き場所</option>{selectablePlacementLevels.map(level => <option key={level} value={level}>{placementLabels[level]}</option>)}</select></label>
                   {(!historyLevel || historyLevel === "keep_for_use") && <label>使い道 <select value={historyPurpose} onChange={e => setHistoryPurpose(e.target.value)}><option value="">すべての使い道</option>{purposes.map(p => <option key={p}>{p}</option>)}</select></label>}
                   <div className="memo-list">{historicalMemos.map(memo => <MemoRow key={memo.id} memo={memo} onOpen={() => setSelected(memo)} onDialogue={id => void openThread(id)} />)}</div>
                   {!historicalMemos.length && !historyError && <p>該当する履歴はありません。</p>}
